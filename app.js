@@ -12,6 +12,8 @@ const WASM_URL =
 const video = document.querySelector("#camera");
 const startBtn = document.querySelector("#startBtn");
 const demoBtn = document.querySelector("#demoBtn");
+const domainBtn = document.querySelector("#domainBtn");
+const domainLayer = document.querySelector("#domainLayer");
 const statusEl = document.querySelector("#status");
 const slashLayer = document.querySelector("#slashLayer");
 const gestureFx = document.querySelector("#gestureFx");
@@ -38,11 +40,20 @@ let lastSlashTime = 0;
 let combo = 0;
 let comboTimer = 0;
 let energy = 100;
+let domainHoldStart = 0;
+let lastDomainTime = 0;
+let lastFistRecharge = 0;
+let domainActive = false;
 
 const COOLDOWN_MS = 500;
 const DETECTION_INTERVAL_MS = 50; // ~20 FPS hand inference: still light, but more responsive
 const COMBO_WINDOW_MS = 1800;
 const MAX_PARTICLES = 18;
+const DOMAIN_COST = 40;
+const DOMAIN_HOLD_MS = 700;
+const DOMAIN_COOLDOWN_MS = 6500;
+const FIST_RECHARGE_INTERVAL_MS = 120;
+const FIST_RECHARGE_AMOUNT = 8;
 
 function setStatus(text) {
   statusEl.textContent = text;
@@ -82,6 +93,7 @@ async function startCamera() {
   running = true;
   startBtn.disabled = true;
   demoBtn.disabled = false;
+  domainBtn.disabled = false;
   setStatus("Camera ready — show one hand");
 
   resizeOverlay();
@@ -125,6 +137,28 @@ function isPointing(hand) {
     angle(hand[17], hand[18], hand[20]) < 145;
 
   return indexStraight && middleBent && ringBent && pinkyBent;
+}
+
+function isFist(hand) {
+  const indexBent = angle(hand[5], hand[6], hand[8]) < 135;
+  const middleBent = angle(hand[9], hand[10], hand[12]) < 135;
+  const ringBent = angle(hand[13], hand[14], hand[16]) < 135;
+  const pinkyBent = angle(hand[17], hand[18], hand[20]) < 135;
+
+  // Thumb folded inward: thumb tip should be closer to the palm center.
+  const palmCenter = hand[9];
+  const thumbFolded = distance(hand[4], palmCenter) < distance(hand[2], palmCenter) * 1.15;
+
+  return indexBent && middleBent && ringBent && pinkyBent && thumbFolded;
+}
+
+function isOpenPalm(hand) {
+  const indexStraight = angle(hand[5], hand[6], hand[8]) > 150;
+  const middleStraight = angle(hand[9], hand[10], hand[12]) > 150;
+  const ringStraight = angle(hand[13], hand[14], hand[16]) > 150;
+  const pinkyStraight = angle(hand[17], hand[18], hand[20]) > 150;
+
+  return indexStraight && middleStraight && ringStraight && pinkyStraight;
 }
 
 function getDirection(dx, dy) {
@@ -509,6 +543,72 @@ function triggerSlash(direction, point, demo = false) {
   lastSlashTime = performance.now();
 }
 
+
+function rechargeWithFist(now) {
+  if (now - lastFistRecharge < FIST_RECHARGE_INTERVAL_MS) return;
+
+  lastFistRecharge = now;
+  const before = energy;
+  energy = Math.min(100, energy + FIST_RECHARGE_AMOUNT);
+
+  if (energy !== before) {
+    updateEnergy();
+    setStatus(`FIST — ENERGY +${energy - before}`);
+  } else {
+    setStatus("FIST — ENERGY FULL");
+  }
+}
+
+function spawnDomainExpansion() {
+  if (!domainLayer || domainActive) return;
+  if (energy < DOMAIN_COST) {
+    setStatus("Not enough energy for Domain Expansion");
+    return;
+  }
+
+  energy -= DOMAIN_COST;
+  updateEnergy();
+  domainActive = true;
+  lastDomainTime = performance.now();
+  setStatus("DOMAIN EXPANSION");
+
+  const overlay = document.createElement("div");
+  overlay.className = "domain-overlay";
+  domainLayer.appendChild(overlay);
+
+  const ring = document.createElement("div");
+  ring.className = "domain-ring";
+  domainLayer.appendChild(ring);
+
+  const mark = document.createElement("div");
+  mark.className = "domain-mark";
+  domainLayer.appendChild(mark);
+
+  const title = document.createElement("div");
+  title.className = "domain-title";
+  title.textContent = "DOMAIN EXPANSION";
+  domainLayer.appendChild(title);
+
+  for (let i = 0; i < 10; i++) {
+    const shard = document.createElement("span");
+    shard.className = "domain-shard";
+    shard.style.setProperty("--angle", `${i * 36 + Math.random() * 12}deg`);
+    shard.style.setProperty("--distance", `${90 + Math.random() * 180}px`);
+    domainLayer.appendChild(shard);
+    setTimeout(() => shard.remove(), 900);
+  }
+
+  // Keep the effect short and lightweight: roughly 1.2 seconds total.
+  setTimeout(() => {
+    overlay.remove();
+    ring.remove();
+    mark.remove();
+    title.remove();
+    domainActive = false;
+    setStatus("DOMAIN COMPLETE — show your hand");
+  }, 1250);
+}
+
 function processResults(results) {
   if (!results?.landmarks?.length) {
     clearTracking();
@@ -519,8 +619,38 @@ function processResults(results) {
   const hand = results.landmarks[0];
   const tip = drawHandTracking(hand);
   const pointing = isPointing(hand);
+  const fist = isFist(hand);
+  const openPalm = isOpenPalm(hand);
 
   const now = performance.now();
+
+  // Fist is the fastest energy-recharge state.
+  if (fist) {
+    rechargeWithFist(now);
+    previousTip = { ...tip };
+    previousTipTime = now;
+    return;
+  }
+
+  // Hold an open palm to charge and release Domain Expansion.
+  if (openPalm && !pointing) {
+    if (!domainHoldStart) domainHoldStart = now;
+
+    const held = now - domainHoldStart;
+    if (held >= DOMAIN_HOLD_MS && now - lastDomainTime > DOMAIN_COOLDOWN_MS) {
+      spawnDomainExpansion();
+      domainHoldStart = 0;
+    } else {
+      const remaining = Math.max(0, DOMAIN_HOLD_MS - held);
+      setStatus(`OPEN PALM — DOMAIN ${Math.ceil(remaining / 100) / 10}s`);
+    }
+
+    previousTip = { ...tip };
+    previousTipTime = now;
+    return;
+  }
+
+  domainHoldStart = 0;
 
   if (!previousTip) {
     previousTip = { ...tip };
@@ -615,6 +745,10 @@ startBtn.addEventListener("click", async () => {
     startBtn.disabled = false;
     setStatus(`Error: ${error.message}`);
   }
+});
+
+domainBtn.addEventListener("click", () => {
+  spawnDomainExpansion();
 });
 
 demoBtn.addEventListener("click", () => {

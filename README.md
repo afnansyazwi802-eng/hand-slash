@@ -136,3 +136,13 @@ Swipe detection uses the smoothed index fingertip position and screen-space move
 - Slash animation lasts longer so it is easier to perceive.
 - Slash activation has an impact ring, brief flash, small shards, and a tiny screen response.
 - Hand inference is raised from ~16 FPS to ~20 FPS for better responsiveness while keeping the one-hand / 640x480 lightweight profile.
+
+
+## v6 skills
+
+- **Fist:** rapidly recharges Energy (+8 every 120ms while the fist is held, capped at 100).
+- **Point + Move:** performs the slash.
+- **Open palm:** hold for about 0.7 seconds to activate **Domain Expansion**. Domain costs 40 Energy and has a short cooldown.
+- **Test Domain:** included for testing the visual effect without making the gesture.
+
+The domain effect is intentionally short and CSS-based so it stays lightweight on an i5 laptop.
