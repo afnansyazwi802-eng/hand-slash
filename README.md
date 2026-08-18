@@ -105,3 +105,17 @@ Code in this repository is provided as an example project. Replace this section 
 
 The camera view now draws the detected hand landmarks and a smoothed ring around the index fingertip.
 The ring helps you see exactly what MediaPipe is tracking. The slash is spawned at the tracked fingertip instead of always appearing in the center.
+
+
+## Performance profile
+
+The browser version is intentionally tuned for laptops:
+- 640x480 preferred camera input
+- maximum camera frame rate of 30 FPS
+- hand inference capped at about 18 FPS
+- one detected hand
+- lightweight hand overlay
+- maximum 18 simultaneous particles
+- maximum 3 simultaneous slash images
+
+This keeps the effect responsive without continuously pushing the CPU/GPU at full load.

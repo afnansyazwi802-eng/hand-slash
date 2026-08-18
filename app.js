@@ -15,9 +15,11 @@ const demoBtn = document.querySelector("#demoBtn");
 const statusEl = document.querySelector("#status");
 const slashLayer = document.querySelector("#slashLayer");
 const handOverlay = document.querySelector("#handOverlay");
-const overlayCtx = handOverlay.getContext("2d");
+const overlayCtx = handOverlay.getContext("2d", { alpha: true });
 const sensitivityEl = document.querySelector("#sensitivity");
 const gestureModeEl = document.querySelector("#gestureMode");
+const comboEl = document.querySelector("#combo");
+const energyBar = document.querySelector("#energyBar i");
 
 const HORIZONTAL_ASSET = "./assets/horizontal.png";
 const VERTICAL_ASSET = "./assets/vertical.png";
@@ -26,13 +28,21 @@ let handLandmarker = null;
 let stream = null;
 let running = false;
 let lastVideoTime = -1;
-let previousWrist = null;
+let previousPoint = null;
+let previousPointTime = 0;
 let lastGestureTime = 0;
 let gestureArmed = true;
-let lastPointing = false;
 let smoothedPoint = null;
+let lastDetectionTime = 0;
+let combo = 0;
+let comboTimer = 0;
+let energy = 100;
+let lastFrameTime = 0;
 
-const COOLDOWN_MS = 520;
+const COOLDOWN_MS = 430;
+const DETECTION_INTERVAL_MS = 55; // ~18 FPS: much lighter than processing every camera frame.
+const COMBO_WINDOW_MS = 1800;
+const MAX_PARTICLES = 18;
 
 function setStatus(text) {
   statusEl.textContent = text;
@@ -49,9 +59,9 @@ async function createHandLandmarker() {
     },
     runningMode: "VIDEO",
     numHands: 1,
-    minHandDetectionConfidence: 0.55,
-    minHandPresenceConfidence: 0.55,
-    minTrackingConfidence: 0.55
+    minHandDetectionConfidence: 0.58,
+    minHandPresenceConfidence: 0.58,
+    minTrackingConfidence: 0.58
   });
 }
 
@@ -60,11 +70,13 @@ async function startCamera() {
     throw new Error("Camera access is not available in this browser.");
   }
 
+  // 640x480 is deliberately used to keep CPU/GPU load low.
   stream = await navigator.mediaDevices.getUserMedia({
     video: {
       facingMode: "user",
-      width: { ideal: 1280 },
-      height: { ideal: 720 }
+      width: { ideal: 640, max: 960 },
+      height: { ideal: 480, max: 720 },
+      frameRate: { ideal: 24, max: 30 }
     },
     audio: false
   });
@@ -77,30 +89,13 @@ async function startCamera() {
   demoBtn.disabled = false;
   setStatus("Camera ready — point + move");
 
+  resizeOverlay();
   requestAnimationFrame(detectLoop);
 }
 
 function distance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
-
-/*
-  MediaPipe hand landmarks:
-  0 wrist
-  4 thumb tip
-  5 index MCP
-  6 index PIP
-  8 index tip
-  9 middle MCP
-  10 middle PIP
-  12 middle tip
-  13 ring MCP
-  14 ring PIP
-  16 ring tip
-  17 pinky MCP
-  18 pinky PIP
-  20 pinky tip
-*/
 
 function fingerExtended(hand, tip, pip, mcp) {
   const wrist = hand[0];
@@ -121,57 +116,51 @@ function isPointing(hand) {
   return indexExtended && !middleExtended && !ringExtended && !pinkyExtended;
 }
 
-function getMovement(hand) {
-  const wrist = hand[0];
-
-  if (!previousWrist) {
-    previousWrist = { x: wrist.x, y: wrist.y };
-    return { dx: 0, dy: 0, amount: 0 };
-  }
-
-  const dx = wrist.x - previousWrist.x;
-  const dy = wrist.y - previousWrist.y;
-
-  previousWrist = { x: wrist.x, y: wrist.y };
-
-  return {
-    dx,
-    dy,
-    amount: Math.hypot(dx, dy)
-  };
-}
-
 function getDirection(dx, dy) {
   const ax = Math.abs(dx);
   const ay = Math.abs(dy);
 
-  if (ax > ay * 1.45) {
-    return "horizontal";
-  }
-
-  if (ay > ax * 1.45) {
-    return "vertical";
-  }
-
-  // A diagonal is made by rotating the horizontal slash.
+  if (ax > ay * 1.45) return "horizontal";
+  if (ay > ax * 1.45) return "vertical";
   return dx * dy < 0 ? "diagonal-up" : "diagonal-down";
+}
+
+function updateCombo() {
+  const now = performance.now();
+
+  if (now - comboTimer > COMBO_WINDOW_MS) {
+    combo = 0;
+  }
+
+  combo += 1;
+  comboTimer = now;
+  comboEl.textContent = combo;
+
+  // Small energy reward, capped at 100.
+  energy = Math.min(100, energy + 8);
+  updateEnergy();
+}
+
+function updateEnergy() {
+  energyBar.style.transform = `scaleX(${energy / 100})`;
+}
+
+function drainEnergy(amount) {
+  energy = Math.max(0, energy - amount);
+  updateEnergy();
 }
 
 function shouldTrigger(pointing, movement) {
   const now = performance.now();
 
-  if (now - lastGestureTime < COOLDOWN_MS) {
-    return false;
-  }
+  if (now - lastGestureTime < COOLDOWN_MS) return false;
 
   if (!pointing) {
     gestureArmed = true;
     return false;
   }
 
-  if (!gestureArmed) {
-    return false;
-  }
+  if (!gestureArmed) return false;
 
   if (gestureModeEl.value === "point") {
     gestureArmed = false;
@@ -180,7 +169,8 @@ function shouldTrigger(pointing, movement) {
 
   const threshold = Number(sensitivityEl.value);
 
-  if (movement.amount >= threshold) {
+  // Require a real swipe rather than tiny camera jitter.
+  if (movement.amount >= threshold && movement.speed >= 0.0015) {
     gestureArmed = false;
     return true;
   }
@@ -188,15 +178,136 @@ function shouldTrigger(pointing, movement) {
   return false;
 }
 
+function resizeOverlay() {
+  const rect = video.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+
+  handOverlay.width = Math.max(1, Math.round(rect.width * dpr));
+  handOverlay.height = Math.max(1, Math.round(rect.height * dpr));
+  overlayCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function videoPointToScreen(landmark) {
+  const rect = video.getBoundingClientRect();
+  const videoW = video.videoWidth || 640;
+  const videoH = video.videoHeight || 480;
+
+  const scale = Math.max(rect.width / videoW, rect.height / videoH);
+  const shownW = videoW * scale;
+  const shownH = videoH * scale;
+  const cropX = (shownW - rect.width) / 2;
+  const cropY = (shownH - rect.height) / 2;
+
+  return {
+    x: (1 - landmark.x) * shownW - cropX,
+    y: landmark.y * shownH - cropY
+  };
+}
+
+function smoothPoint(point, amount = 0.48) {
+  if (!smoothedPoint) {
+    smoothedPoint = { ...point };
+    return smoothedPoint;
+  }
+
+  smoothedPoint.x += (point.x - smoothedPoint.x) * amount;
+  smoothedPoint.y += (point.y - smoothedPoint.y) * amount;
+
+  return smoothedPoint;
+}
+
+function drawHandTracking(hand) {
+  const rect = video.getBoundingClientRect();
+  overlayCtx.clearRect(0, 0, rect.width, rect.height);
+
+  const points = hand.map(videoPointToScreen);
+
+  const connections = [
+    [0,1],[1,2],[2,3],[3,4],
+    [0,5],[5,6],[6,7],[7,8],
+    [5,9],[9,10],[10,11],[11,12],
+    [9,13],[13,14],[14,15],[15,16],
+    [13,17],[17,18],[18,19],[19,20],
+    [0,17]
+  ];
+
+  overlayCtx.lineWidth = 1.5;
+  overlayCtx.strokeStyle = "rgba(255,255,255,0.45)";
+  overlayCtx.beginPath();
+
+  for (const [a, b] of connections) {
+    overlayCtx.moveTo(points[a].x, points[a].y);
+    overlayCtx.lineTo(points[b].x, points[b].y);
+  }
+
+  overlayCtx.stroke();
+
+  // Draw only the important landmarks to reduce canvas work.
+  const important = [0, 5, 6, 7, 8, 9, 13, 17];
+
+  overlayCtx.fillStyle = "rgba(255,255,255,0.9)";
+  for (const i of important) {
+    const p = points[i];
+    overlayCtx.beginPath();
+    overlayCtx.arc(p.x, p.y, i === 8 ? 5 : 3, 0, Math.PI * 2);
+    overlayCtx.fill();
+  }
+
+  const tip = smoothPoint(points[8]);
+
+  overlayCtx.beginPath();
+  overlayCtx.arc(tip.x, tip.y, 12, 0, Math.PI * 2);
+  overlayCtx.strokeStyle = "rgba(255,255,255,0.95)";
+  overlayCtx.lineWidth = 2.5;
+  overlayCtx.stroke();
+
+  return tip;
+}
+
+function clearHandTracking() {
+  const rect = video.getBoundingClientRect();
+  overlayCtx.clearRect(0, 0, rect.width, rect.height);
+  smoothedPoint = null;
+  previousPoint = null;
+}
+
+function screenToPercent(point) {
+  const rect = video.getBoundingClientRect();
+
+  return {
+    x: (point.x / rect.width) * 100,
+    y: (point.y / rect.height) * 100
+  };
+}
+
+function spawnParticles(point) {
+  if (!point || slashLayer.childElementCount > MAX_PARTICLES) return;
+
+  const pos = screenToPercent(point);
+
+  for (let i = 0; i < 6; i++) {
+    const p = document.createElement("span");
+    p.className = "particle";
+    p.style.left = `${pos.x}%`;
+    p.style.top = `${pos.y}%`;
+    p.style.setProperty("--dx", `${(Math.random() - 0.5) * 90}px`);
+    p.style.setProperty("--dy", `${(Math.random() - 0.5) * 90}px`);
+    slashLayer.appendChild(p);
+
+    setTimeout(() => p.remove(), 360);
+  }
+}
+
 function spawnSlash(direction, spawnPoint = null) {
+  if (slashLayer.querySelectorAll(".slash").length >= 3) return;
+
   const img = document.createElement("img");
   img.className = "slash";
 
-  if (direction === "vertical") {
-    img.src = VERTICAL_ASSET;
-  } else {
-    img.src = HORIZONTAL_ASSET;
-  }
+  img.src =
+    direction === "vertical"
+      ? VERTICAL_ASSET
+      : HORIZONTAL_ASSET;
 
   const angle =
     direction === "diagonal-up"
@@ -205,18 +316,12 @@ function spawnSlash(direction, spawnPoint = null) {
         ? 25
         : 0;
 
-  const scale =
+  const scale = direction === "vertical" ? 0.78 : 1;
+
+  img.style.width =
     direction === "vertical"
-      ? 0.78
-      : 1;
-
-  const startScale = direction === "vertical"
-    ? 0.72
-    : 0.72;
-
-  img.style.width = direction === "vertical"
-    ? "min(58vh, 900px)"
-    : "min(86vw, 1200px)";
+      ? "min(58vh, 900px)"
+      : "min(86vw, 1200px)";
 
   if (spawnPoint) {
     const pos = screenToPercent(spawnPoint);
@@ -236,7 +341,7 @@ function spawnSlash(direction, spawnPoint = null) {
     [
       {
         opacity: 0,
-        transform: `${baseTransform} scale(${startScale})`,
+        transform: `${baseTransform} scale(.72)`,
         filter: "contrast(1.05) blur(2px)"
       },
       {
@@ -256,136 +361,27 @@ function spawnSlash(direction, spawnPoint = null) {
       }
     ],
     {
-      duration: 360,
+      duration: 330,
       easing: "cubic-bezier(.16,.8,.24,1)",
       fill: "forwards"
     }
   );
 
-  setTimeout(() => img.remove(), 420);
+  setTimeout(() => img.remove(), 390);
   lastGestureTime = performance.now();
 }
 
 function triggerSlash(direction = "horizontal", spawnPoint = null) {
+  if (energy < 8) return;
+
+  drainEnergy(8);
+  updateCombo();
+  spawnParticles(spawnPoint);
   spawnSlash(direction, spawnPoint);
-}
-
-
-function resizeOverlay() {
-  const rect = video.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-
-  handOverlay.width = Math.max(1, Math.round(rect.width * dpr));
-  handOverlay.height = Math.max(1, Math.round(rect.height * dpr));
-  overlayCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-}
-
-function videoPointToScreen(landmark) {
-  const rect = video.getBoundingClientRect();
-
-  const videoW = video.videoWidth || 1280;
-  const videoH = video.videoHeight || 720;
-
-  // object-fit: cover mapping.
-  const scale = Math.max(rect.width / videoW, rect.height / videoH);
-  const shownW = videoW * scale;
-  const shownH = videoH * scale;
-
-  const cropX = (shownW - rect.width) / 2;
-  const cropY = (shownH - rect.height) / 2;
-
-  // The video is mirrored with CSS, so flip X.
-  const x = (1 - landmark.x) * shownW - cropX;
-  const y = landmark.y * shownH - cropY;
-
-  return { x, y };
-}
-
-function smoothPoint(point, amount = 0.38) {
-  if (!smoothedPoint) {
-    smoothedPoint = { ...point };
-    return smoothedPoint;
-  }
-
-  smoothedPoint.x += (point.x - smoothedPoint.x) * amount;
-  smoothedPoint.y += (point.y - smoothedPoint.y) * amount;
-
-  return smoothedPoint;
-}
-
-function drawHandTracking(hand) {
-  resizeOverlay();
-
-  const rect = video.getBoundingClientRect();
-  overlayCtx.clearRect(0, 0, rect.width, rect.height);
-
-  const points = hand.map(videoPointToScreen);
-
-  // Connections.
-  const connections = [
-    [0,1],[1,2],[2,3],[3,4],
-    [0,5],[5,6],[6,7],[7,8],
-    [5,9],[9,10],[10,11],[11,12],
-    [9,13],[13,14],[14,15],[15,16],
-    [13,17],[17,18],[18,19],[19,20],
-    [0,17]
-  ];
-
-  overlayCtx.lineWidth = 2;
-  overlayCtx.strokeStyle = "rgba(255,255,255,0.65)";
-  overlayCtx.beginPath();
-
-  for (const [a, b] of connections) {
-    overlayCtx.moveTo(points[a].x, points[a].y);
-    overlayCtx.lineTo(points[b].x, points[b].y);
-  }
-
-  overlayCtx.stroke();
-
-  // Landmark dots.
-  for (const p of points) {
-    overlayCtx.beginPath();
-    overlayCtx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-    overlayCtx.fillStyle = "rgba(255,255,255,0.9)";
-    overlayCtx.fill();
-  }
-
-  // Large index fingertip tracker.
-  const tip = smoothPoint(points[8], 0.42);
-
-  overlayCtx.beginPath();
-  overlayCtx.arc(tip.x, tip.y, 13, 0, Math.PI * 2);
-  overlayCtx.strokeStyle = "rgba(255,255,255,0.95)";
-  overlayCtx.lineWidth = 3;
-  overlayCtx.stroke();
-
-  overlayCtx.beginPath();
-  overlayCtx.arc(tip.x, tip.y, 4, 0, Math.PI * 2);
-  overlayCtx.fillStyle = "#fff";
-  overlayCtx.fill();
-
-  return tip;
-}
-
-function clearHandTracking() {
-  const rect = video.getBoundingClientRect();
-  overlayCtx.clearRect(0, 0, rect.width, rect.height);
-  smoothedPoint = null;
-}
-
-function screenToPercent(point) {
-  const rect = video.getBoundingClientRect();
-
-  return {
-    x: (point.x / rect.width) * 100,
-    y: (point.y / rect.height) * 100
-  };
 }
 
 function processResults(results) {
   if (!results?.landmarks?.length) {
-    previousWrist = null;
-    lastPointing = false;
     clearHandTracking();
     setStatus("No hand detected");
     return;
@@ -394,10 +390,28 @@ function processResults(results) {
   const hand = results.landmarks[0];
   const indexScreenPoint = drawHandTracking(hand);
   const pointing = isPointing(hand);
-  const movement = getMovement(hand);
+
+  const now = performance.now();
+  let movement = { dx: 0, dy: 0, amount: 0, speed: 0 };
+
+  if (previousPoint) {
+    const dt = Math.max(16, now - previousPointTime);
+    const dx = indexScreenPoint.x - previousPoint.x;
+    const dy = indexScreenPoint.y - previousPoint.y;
+
+    movement = {
+      dx,
+      dy,
+      amount: Math.hypot(dx, dy) / Math.max(video.clientWidth, video.clientHeight),
+      speed: Math.hypot(dx, dy) / dt
+    };
+  }
+
+  previousPoint = { ...indexScreenPoint };
+  previousPointTime = now;
 
   if (pointing) {
-    setStatus("POINTING — move to slash");
+    setStatus("POINTING — swipe your finger");
   } else {
     setStatus("Hand detected — point your index finger");
   }
@@ -406,21 +420,21 @@ function processResults(results) {
     const direction = getDirection(movement.dx, movement.dy);
     triggerSlash(direction, indexScreenPoint);
   }
-
-  lastPointing = pointing;
 }
 
-function detectLoop() {
+function detectLoop(now) {
   if (!running || !handLandmarker) return;
 
-  if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
+  // Hard cap processing to about 18 detections/second.
+  if (
+    video.readyState >= 2 &&
+    video.currentTime !== lastVideoTime &&
+    now - lastDetectionTime >= DETECTION_INTERVAL_MS
+  ) {
     lastVideoTime = video.currentTime;
+    lastDetectionTime = now;
 
-    const results = handLandmarker.detectForVideo(
-      video,
-      performance.now()
-    );
-
+    const results = handLandmarker.detectForVideo(video, now);
     processResults(results);
   }
 
@@ -443,9 +457,20 @@ startBtn.addEventListener("click", async () => {
 });
 
 demoBtn.addEventListener("click", () => {
-  const directions = ["horizontal", "vertical", "diagonal-up", "diagonal-down"];
-  const direction =
-    directions[Math.floor(Math.random() * directions.length)];
+  const directions = [
+    "horizontal",
+    "vertical",
+    "diagonal-up",
+    "diagonal-down"
+  ];
 
-  triggerSlash(direction);
+  triggerSlash(
+    directions[Math.floor(Math.random() * directions.length)],
+    {
+      x: video.clientWidth * 0.5,
+      y: video.clientHeight * 0.5
+    }
+  );
 });
+
+updateEnergy();
