@@ -119,3 +119,12 @@ The browser version is intentionally tuned for laptops:
 - maximum 3 simultaneous slash images
 
 This keeps the effect responsive without continuously pushing the CPU/GPU at full load.
+
+
+## v3 gesture fix
+
+This version fixes two bugs:
+1. The combo HUD elements now exist, so triggering a slash cannot crash on a missing DOM element.
+2. Pointing detection uses finger-joint angles instead of wrist-distance heuristics, making it much less likely to get stuck.
+
+Swipe detection uses the smoothed index fingertip position and screen-space movement. The effect still uses a lightweight 640x480 camera and roughly 16 FPS hand inference.

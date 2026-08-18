@@ -198,6 +198,8 @@ input[type="range"] {
   overflow: hidden;
 }
 
+.energy-row { display: flex; align-items: center; gap: 4px; }
+
 #energyBar i {
   display: block;
   width: 100%;
@@ -205,4 +207,33 @@ input[type="range"] {
   background: #fff;
   transform-origin: left;
   transition: transform .12s linear;
+}
+
+
+.particle {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 8px rgba(255,255,255,.8);
+  transform: translate(-50%, -50%);
+  animation: particle-fly .38s ease-out forwards;
+}
+
+@keyframes particle-fly {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(.5);
+  }
+  15% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translate(
+      calc(-50% + var(--dx)),
+      calc(-50% + var(--dy))
+    ) scale(0);
+  }
 }
