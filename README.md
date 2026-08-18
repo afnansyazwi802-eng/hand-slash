@@ -128,3 +128,11 @@ This version fixes two bugs:
 2. Pointing detection uses finger-joint angles instead of wrist-distance heuristics, making it much less likely to get stuck.
 
 Swipe detection uses the smoothed index fingertip position and screen-space movement. The effect still uses a lightweight 640x480 camera and roughly 16 FPS hand inference.
+
+
+## v5 feel / impact update
+
+- Live fingertip movement leaves a short fading motion streak.
+- Slash animation lasts longer so it is easier to perceive.
+- Slash activation has an impact ring, brief flash, small shards, and a tiny screen response.
+- Hand inference is raised from ~16 FPS to ~20 FPS for better responsiveness while keeping the one-hand / 640x480 lightweight profile.

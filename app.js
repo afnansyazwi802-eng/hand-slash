@@ -14,6 +14,7 @@ const startBtn = document.querySelector("#startBtn");
 const demoBtn = document.querySelector("#demoBtn");
 const statusEl = document.querySelector("#status");
 const slashLayer = document.querySelector("#slashLayer");
+const gestureFx = document.querySelector("#gestureFx");
 const handOverlay = document.querySelector("#handOverlay");
 const overlayCtx = handOverlay.getContext("2d");
 const sensitivityEl = document.querySelector("#sensitivity");
@@ -39,7 +40,7 @@ let comboTimer = 0;
 let energy = 100;
 
 const COOLDOWN_MS = 500;
-const DETECTION_INTERVAL_MS = 60; // ~16 FPS hand inference
+const DETECTION_INTERVAL_MS = 50; // ~20 FPS hand inference: still light, but more responsive
 const COMBO_WINDOW_MS = 1800;
 const MAX_PARTICLES = 18;
 
@@ -263,6 +264,72 @@ function addCombo() {
   updateEnergy();
 }
 
+function drawMotionStreak(from, to) {
+  if (!from || !to || !gestureFx) return;
+
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.hypot(dx, dy);
+
+  // Ignore tiny tracking jitter.
+  if (length < 5) return;
+
+  const rect = video.getBoundingClientRect();
+  const x = Math.max(0, Math.min(rect.width, from.x));
+  const y = Math.max(0, Math.min(rect.height, from.y));
+
+  const streak = document.createElement("span");
+  streak.className = "motion-streak";
+  streak.style.left = `${x}px`;
+  streak.style.top = `${y}px`;
+  streak.style.width = `${Math.min(length * 1.8, 150)}px`;
+  streak.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+
+  gestureFx.appendChild(streak);
+  setTimeout(() => streak.remove(), 240);
+}
+
+function spawnImpact(point, direction) {
+  if (!gestureFx || !point) return;
+
+  const pos = screenToPercent(point);
+
+  const ring = document.createElement("span");
+  ring.className = "impact-ring";
+  ring.style.left = `${pos.x}%`;
+  ring.style.top = `${pos.y}%`;
+  gestureFx.appendChild(ring);
+  setTimeout(() => ring.remove(), 520);
+
+  const flash = document.createElement("span");
+  flash.className = "impact-flash";
+  gestureFx.appendChild(flash);
+  setTimeout(() => flash.remove(), 180);
+
+  // A few restrained shards give the slash a physical "hit".
+  for (let i = 0; i < 5; i++) {
+    const shard = document.createElement("span");
+    shard.className = "impact-shard";
+    shard.style.left = `${pos.x}%`;
+    shard.style.top = `${pos.y}%`;
+
+    let a = Math.random() * 360;
+    if (direction === "horizontal") a += 0;
+    if (direction === "vertical") a += 90;
+
+    shard.style.setProperty("--angle", `${a}deg`);
+    shard.style.setProperty("--distance", `${35 + Math.random() * 55}px`);
+    gestureFx.appendChild(shard);
+    setTimeout(() => shard.remove(), 560);
+  }
+
+  // Very short screen response, not a constant animation.
+  document.body.classList.remove("impact-shake");
+  void document.body.offsetWidth;
+  document.body.classList.add("impact-shake");
+  setTimeout(() => document.body.classList.remove("impact-shake"), 160);
+}
+
 function spawnParticles(point) {
   if (!point) return;
 
@@ -284,25 +351,13 @@ function spawnParticles(point) {
   }
 }
 
-function spawnSlash(direction, point) {
-  const existing = slashLayer.querySelectorAll(".slash").length;
-  if (existing >= 3) return;
+function spawnSlash(direction, point, demo = false) {
+  const existing = slashLayer.querySelectorAll(".slash, .slash-fallback").length;
+  if (existing >= 3 && !demo) return;
 
-  const img = document.createElement("img");
-  img.className = "slash";
-
-  img.src =
-    direction === "vertical"
-      ? VERTICAL_ASSET
-      : HORIZONTAL_ASSET;
-
-  img.alt = "";
-
-  if (point) {
-    const pos = screenToPercent(point);
-    img.style.left = `${pos.x}%`;
-    img.style.top = `${pos.y}%`;
-  }
+  const pos = point
+    ? screenToPercent(point)
+    : { x: 50, y: 50 };
 
   const angle =
     direction === "diagonal-up"
@@ -311,64 +366,146 @@ function spawnSlash(direction, point) {
         ? 25
         : 0;
 
+  const src =
+    direction === "vertical"
+      ? VERTICAL_ASSET
+      : HORIZONTAL_ASSET;
+
+  const img = document.createElement("img");
+  img.className = "slash";
+  img.alt = "";
+  img.src = src;
+
+  img.style.left = `${pos.x}%`;
+  img.style.top = `${pos.y}%`;
   img.style.width =
     direction === "vertical"
       ? "min(58vh, 850px)"
       : "min(86vw, 1150px)";
 
-  slashLayer.appendChild(img);
-
   const base = `translate(-50%, -50%) rotate(${angle}deg)`;
 
-  // Explicitly animate from invisible to visible to invisible.
-  const animation = img.animate(
-    [
-      {
-        opacity: 0,
-        transform: `${base} scale(.72)`,
-        filter: "contrast(1.15) blur(2px)"
-      },
-      {
-        opacity: 1,
-        transform: `${base} scale(1)`,
-        filter: "contrast(1.2) blur(0)"
-      },
-      {
-        opacity: 1,
-        transform: `${base} scale(1.04)`,
-        filter: "contrast(1.15) blur(0)"
-      },
-      {
-        opacity: 0,
-        transform: `${base} scale(1.10)`,
-        filter: "contrast(1.1) blur(1px)"
-      }
-    ],
-    {
-      duration: 360,
-      easing: "cubic-bezier(.16,.8,.24,1)",
-      fill: "forwards"
-    }
-  );
+  let finished = false;
 
-  animation.finished
-    .catch(() => {})
-    .finally(() => img.remove());
+  const remove = () => {
+    if (finished) return;
+    finished = true;
+    img.remove();
+  };
+
+  img.onerror = () => {
+    console.warn("Slash image failed to load:", src);
+
+    // Never leave the user with a blank effect.
+    img.remove();
+
+    const fallback = document.createElement("div");
+    fallback.className = "slash-fallback";
+
+    fallback.style.left = `${pos.x}%`;
+    fallback.style.top = `${pos.y}%`;
+
+    if (direction === "vertical") {
+      fallback.style.width = "8px";
+      fallback.style.height = "min(65vh, 850px)";
+    } else {
+      fallback.style.width = "min(72vw, 900px)";
+      fallback.style.height = "8px";
+    }
+
+    fallback.style.transform =
+      `translate(-50%, -50%) rotate(${angle}deg) scale(.7)`;
+
+    slashLayer.appendChild(fallback);
+
+    const animation = fallback.animate(
+      [
+        { opacity: 0, transform: `translate(-50%, -50%) rotate(${angle}deg) scale(.7)` },
+        { opacity: 1, transform: `translate(-50%, -50%) rotate(${angle}deg) scale(1)` },
+        { opacity: 0, transform: `translate(-50%, -50%) rotate(${angle}deg) scale(1.08)` }
+      ],
+      {
+        duration: demo ? 1000 : 620,
+        easing: "ease-out",
+        fill: "forwards"
+      }
+    );
+
+    animation.finished.catch(() => {}).finally(() => fallback.remove());
+  };
+
+  slashLayer.appendChild(img);
+
+  /*
+    IMPORTANT:
+    Wait until the PNG is loaded before starting the fade animation.
+    This prevents the animation from finishing while the browser is
+    still downloading the image.
+  */
+  const animateImage = () => {
+    if (finished) return;
+
+    img.animate(
+      [
+        {
+          opacity: 0,
+          transform: `${base} scale(.70)`,
+          filter: "contrast(1.1) blur(3px)"
+        },
+        {
+          opacity: 1,
+          transform: `${base} scale(1)`,
+          filter: "contrast(1.3) blur(0)"
+        },
+        {
+          opacity: 1,
+          transform: `${base} scale(1.04)`,
+          filter: "contrast(1.2) blur(0)"
+        },
+        {
+          opacity: 0,
+          transform: `${base} scale(1.10)`,
+          filter: "contrast(1.1) blur(1px)"
+        }
+      ],
+      {
+        duration: demo ? 1000 : 620,
+        easing: "cubic-bezier(.16,.8,.24,1)",
+        fill: "forwards"
+      }
+    ).finished
+      .catch(() => {})
+      .finally(remove);
+  };
+
+  if (img.complete && img.naturalWidth > 0) {
+    animateImage();
+  } else {
+    img.onload = animateImage;
+  }
 }
 
-function triggerSlash(direction, point) {
-  if (energy < 8) {
-    setStatus("Energy low — wait a moment");
-    return;
+function triggerSlash(direction, point, demo = false) {
+  // Test Slash must always work, regardless of energy.
+  if (!demo) {
+    if (energy < 8) {
+      setStatus("Energy low — wait a moment");
+      return;
+    }
+
+    energy -= 8;
+    updateEnergy();
+    addCombo();
   }
 
-  energy -= 8;
-  updateEnergy();
-  addCombo();
+  const impactPoint = point || {
+    x: video.clientWidth / 2,
+    y: video.clientHeight / 2
+  };
 
-  spawnParticles(point);
-  spawnSlash(direction, point);
-
+  spawnParticles(impactPoint);
+  spawnImpact(impactPoint, direction);
+  spawnSlash(direction, impactPoint, demo);
   lastSlashTime = performance.now();
 }
 
@@ -404,6 +541,12 @@ function processResults(results) {
   const movementRatio = movementPx / Math.max(1, diagonal);
   const speed = movementPx / dt;
 
+  // This is the "live" part: every detected hand movement leaves a tiny
+  // fading trace, so the user can feel that the system is following them.
+  if (pointing && movementPx >= 5) {
+    drawMotionStreak(previousTip, tip);
+  }
+
   if (!pointing) {
     setStatus("Hand detected — point your index finger");
     return;
@@ -412,7 +555,7 @@ function processResults(results) {
   setStatus("POINTING — swipe now");
 
   if (gestureModeEl.value === "point") {
-    if (now - lastSlashTime > COOLDOWN_MS) {
+    if (now - lastSlashTime > 700) {
       triggerSlash("horizontal", tip);
     }
     return;
@@ -484,12 +627,15 @@ demoBtn.addEventListener("click", () => {
 
   const rect = video.getBoundingClientRect();
 
+  setStatus("TEST SLASH!");
+
   triggerSlash(
     directions[Math.floor(Math.random() * directions.length)],
     {
       x: rect.width * 0.5,
       y: rect.height * 0.5
-    }
+    },
+    true
   );
 });
 

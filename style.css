@@ -51,7 +51,7 @@ body {
 #slashLayer {
   position: absolute;
   inset: 0;
-  z-index: 4;
+  z-index: 8;
   pointer-events: none;
 }
 
@@ -236,4 +236,109 @@ input[type="range"] {
       calc(-50% + var(--dy))
     ) scale(0);
   }
+}
+
+
+/* Guaranteed visible fallback if a slash PNG fails to load. */
+.slash-fallback {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(72vw, 900px);
+  height: 8px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 0 10px #fff, 0 0 28px rgba(255,255,255,.9);
+  transform-origin: center;
+  pointer-events: none;
+  z-index: 9;
+}
+
+
+#gestureFx {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.motion-streak {
+  position: absolute;
+  height: 3px;
+  border-radius: 999px;
+  transform-origin: 0 50%;
+  background: #fff;
+  box-shadow:
+    0 0 5px rgba(255,255,255,.95),
+    0 0 14px rgba(255,255,255,.55);
+  opacity: .7;
+  animation: motion-streak-out .22s ease-out forwards;
+}
+
+@keyframes motion-streak-out {
+  0% { opacity: .78; filter: blur(0); }
+  100% { opacity: 0; filter: blur(2px); }
+}
+
+.impact-ring {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border: 2px solid rgba(255,255,255,.95);
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(.3);
+  box-shadow: 0 0 12px rgba(255,255,255,.8);
+  animation: impact-ring .46s cubic-bezier(.15,.8,.25,1) forwards;
+}
+
+@keyframes impact-ring {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(.3); }
+  55% { opacity: .8; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(5.5); }
+}
+
+.impact-flash {
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,.13);
+  animation: impact-flash .16s ease-out forwards;
+}
+
+@keyframes impact-flash {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.impact-shard {
+  position: absolute;
+  width: 2px;
+  height: 20px;
+  background: #fff;
+  box-shadow: 0 0 8px rgba(255,255,255,.8);
+  transform-origin: 50% 100%;
+  animation: impact-shard .5s ease-out forwards;
+}
+
+@keyframes impact-shard {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -100%) rotate(var(--angle)) translateY(0) scaleY(.6);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -100%) rotate(var(--angle)) translateY(var(--distance)) scaleY(0);
+  }
+}
+
+.impact-shake {
+  animation: impact-shake .14s linear;
+}
+
+@keyframes impact-shake {
+  0% { transform: translate(0,0); }
+  25% { transform: translate(-3px, 2px); }
+  50% { transform: translate(3px, -2px); }
+  75% { transform: translate(-2px, -1px); }
+  100% { transform: translate(0,0); }
 }
