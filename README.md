@@ -99,3 +99,9 @@ The animation itself is controlled in `spawnSlash()` inside `app.js`.
 ## License
 
 Code in this repository is provided as an example project. Replace this section with the license you want for your repository.
+
+
+## Hand tracking overlay
+
+The camera view now draws the detected hand landmarks and a smoothed ring around the index fingertip.
+The ring helps you see exactly what MediaPipe is tracking. The slash is spawned at the tracked fingertip instead of always appearing in the center.

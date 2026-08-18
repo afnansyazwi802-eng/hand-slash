@@ -14,6 +14,8 @@ const startBtn = document.querySelector("#startBtn");
 const demoBtn = document.querySelector("#demoBtn");
 const statusEl = document.querySelector("#status");
 const slashLayer = document.querySelector("#slashLayer");
+const handOverlay = document.querySelector("#handOverlay");
+const overlayCtx = handOverlay.getContext("2d");
 const sensitivityEl = document.querySelector("#sensitivity");
 const gestureModeEl = document.querySelector("#gestureMode");
 
@@ -28,6 +30,7 @@ let previousWrist = null;
 let lastGestureTime = 0;
 let gestureArmed = true;
 let lastPointing = false;
+let smoothedPoint = null;
 
 const COOLDOWN_MS = 520;
 
@@ -185,7 +188,7 @@ function shouldTrigger(pointing, movement) {
   return false;
 }
 
-function spawnSlash(direction, dx = 0, dy = 0) {
+function spawnSlash(direction, spawnPoint = null) {
   const img = document.createElement("img");
   img.className = "slash";
 
@@ -214,6 +217,12 @@ function spawnSlash(direction, dx = 0, dy = 0) {
   img.style.width = direction === "vertical"
     ? "min(58vh, 900px)"
     : "min(86vw, 1200px)";
+
+  if (spawnPoint) {
+    const pos = screenToPercent(spawnPoint);
+    img.style.left = `${pos.x}%`;
+    img.style.top = `${pos.y}%`;
+  }
 
   slashLayer.appendChild(img);
 
@@ -257,19 +266,133 @@ function spawnSlash(direction, dx = 0, dy = 0) {
   lastGestureTime = performance.now();
 }
 
-function triggerSlash(direction = "horizontal") {
-  spawnSlash(direction);
+function triggerSlash(direction = "horizontal", spawnPoint = null) {
+  spawnSlash(direction, spawnPoint);
+}
+
+
+function resizeOverlay() {
+  const rect = video.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+
+  handOverlay.width = Math.max(1, Math.round(rect.width * dpr));
+  handOverlay.height = Math.max(1, Math.round(rect.height * dpr));
+  overlayCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function videoPointToScreen(landmark) {
+  const rect = video.getBoundingClientRect();
+
+  const videoW = video.videoWidth || 1280;
+  const videoH = video.videoHeight || 720;
+
+  // object-fit: cover mapping.
+  const scale = Math.max(rect.width / videoW, rect.height / videoH);
+  const shownW = videoW * scale;
+  const shownH = videoH * scale;
+
+  const cropX = (shownW - rect.width) / 2;
+  const cropY = (shownH - rect.height) / 2;
+
+  // The video is mirrored with CSS, so flip X.
+  const x = (1 - landmark.x) * shownW - cropX;
+  const y = landmark.y * shownH - cropY;
+
+  return { x, y };
+}
+
+function smoothPoint(point, amount = 0.38) {
+  if (!smoothedPoint) {
+    smoothedPoint = { ...point };
+    return smoothedPoint;
+  }
+
+  smoothedPoint.x += (point.x - smoothedPoint.x) * amount;
+  smoothedPoint.y += (point.y - smoothedPoint.y) * amount;
+
+  return smoothedPoint;
+}
+
+function drawHandTracking(hand) {
+  resizeOverlay();
+
+  const rect = video.getBoundingClientRect();
+  overlayCtx.clearRect(0, 0, rect.width, rect.height);
+
+  const points = hand.map(videoPointToScreen);
+
+  // Connections.
+  const connections = [
+    [0,1],[1,2],[2,3],[3,4],
+    [0,5],[5,6],[6,7],[7,8],
+    [5,9],[9,10],[10,11],[11,12],
+    [9,13],[13,14],[14,15],[15,16],
+    [13,17],[17,18],[18,19],[19,20],
+    [0,17]
+  ];
+
+  overlayCtx.lineWidth = 2;
+  overlayCtx.strokeStyle = "rgba(255,255,255,0.65)";
+  overlayCtx.beginPath();
+
+  for (const [a, b] of connections) {
+    overlayCtx.moveTo(points[a].x, points[a].y);
+    overlayCtx.lineTo(points[b].x, points[b].y);
+  }
+
+  overlayCtx.stroke();
+
+  // Landmark dots.
+  for (const p of points) {
+    overlayCtx.beginPath();
+    overlayCtx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+    overlayCtx.fillStyle = "rgba(255,255,255,0.9)";
+    overlayCtx.fill();
+  }
+
+  // Large index fingertip tracker.
+  const tip = smoothPoint(points[8], 0.42);
+
+  overlayCtx.beginPath();
+  overlayCtx.arc(tip.x, tip.y, 13, 0, Math.PI * 2);
+  overlayCtx.strokeStyle = "rgba(255,255,255,0.95)";
+  overlayCtx.lineWidth = 3;
+  overlayCtx.stroke();
+
+  overlayCtx.beginPath();
+  overlayCtx.arc(tip.x, tip.y, 4, 0, Math.PI * 2);
+  overlayCtx.fillStyle = "#fff";
+  overlayCtx.fill();
+
+  return tip;
+}
+
+function clearHandTracking() {
+  const rect = video.getBoundingClientRect();
+  overlayCtx.clearRect(0, 0, rect.width, rect.height);
+  smoothedPoint = null;
+}
+
+function screenToPercent(point) {
+  const rect = video.getBoundingClientRect();
+
+  return {
+    x: (point.x / rect.width) * 100,
+    y: (point.y / rect.height) * 100
+  };
 }
 
 function processResults(results) {
   if (!results?.landmarks?.length) {
     previousWrist = null;
     lastPointing = false;
+    clearHandTracking();
     setStatus("No hand detected");
     return;
   }
 
   const hand = results.landmarks[0];
+  const indexScreenPoint = drawHandTracking(hand);
   const pointing = isPointing(hand);
   const movement = getMovement(hand);
 
@@ -281,7 +404,7 @@ function processResults(results) {
 
   if (shouldTrigger(pointing, movement)) {
     const direction = getDirection(movement.dx, movement.dy);
-    triggerSlash(direction);
+    triggerSlash(direction, indexScreenPoint);
   }
 
   lastPointing = pointing;
@@ -303,6 +426,8 @@ function detectLoop() {
 
   requestAnimationFrame(detectLoop);
 }
+
+window.addEventListener("resize", resizeOverlay);
 
 startBtn.addEventListener("click", async () => {
   startBtn.disabled = true;
