@@ -138,11 +138,9 @@ Swipe detection uses the smoothed index fingertip position and screen-space move
 - Hand inference is raised from ~16 FPS to ~20 FPS for better responsiveness while keeping the one-hand / 640x480 lightweight profile.
 
 
-## v6 skills
+## v8 Domain Expansion
 
-- **Fist:** rapidly recharges Energy (+8 every 120ms while the fist is held, capped at 100).
-- **Point + Move:** performs the slash.
-- **Open palm:** hold for about 0.7 seconds to activate **Domain Expansion**. Domain costs 40 Energy and has a short cooldown.
-- **Test Domain:** included for testing the visual effect without making the gesture.
+Open-palm hold activates a 5-second Domain Expansion. While active, the page automatically creates randomized horizontal, vertical, and diagonal Dismantle slashes around the camera view. The domain uses lightweight CSS/DOM effects and keeps the normal slash/particle caps.
 
-The domain effect is intentionally short and CSS-based so it stays lightweight on an i5 laptop.
+
+Domain activation is now a deliberate ~1.2 second open-palm hold, keeping it between the requested 1–2 second range.
