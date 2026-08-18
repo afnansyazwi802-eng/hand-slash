@@ -20,7 +20,12 @@ const overlayCtx = handOverlay.getContext("2d");
 const sensitivityEl = document.querySelector("#sensitivity");
 const gestureModeEl = document.querySelector("#gestureMode");
 const comboEl = document.querySelector("#combo");
-const energyBar = document.querySelector("#energyBar i");
+const energyBar = document.querySelector("#energyBar");
+const energyText = document.querySelector("#energyText");
+const hpBar = document.querySelector("#hpBar");
+const hpText = document.querySelector("#hpText");
+const hudPanel = document.querySelector(".hud");
+const hudToggle = document.querySelector("#hudToggle");
 
 const HORIZONTAL_ASSET = "./assets/horizontal.png";
 const VERTICAL_ASSET = "./assets/vertical.png";
@@ -279,13 +284,12 @@ function screenToPercent(point) {
 }
 
 function updateHP() {
-  const bar = document.querySelector("#hpBar");
-  const text = document.querySelector("#hpText");
-  if (!bar || !text) return;
-
-  hp = Math.max(0, Math.min(MAX_HP, hp));
-  bar.style.width = `${hp}%`;
-  text.textContent = `${Math.round(hp)} / ${MAX_HP}`;
+  if (hpBar) {
+    hpBar.style.transform = `scaleX(${hp / MAX_HP})`;
+  }
+  if (hpText) {
+    hpText.textContent = `${Math.round(hp)} / ${MAX_HP}`;
+  }
 }
 
 function takeDamage(amount = 20) {
@@ -304,6 +308,9 @@ function takeDamage(amount = 20) {
 function updateEnergy() {
   if (energyBar) {
     energyBar.style.transform = `scaleX(${energy / 100})`;
+  }
+  if (energyText) {
+    energyText.textContent = `${Math.round(energy)} / 100`;
   }
 }
 
@@ -410,15 +417,36 @@ function activateRCT() {
   const orb = document.createElement("div");
   orb.className = "rct-orb";
 
+  const symbol = document.createElement("div");
+  symbol.className = "rct-symbol";
+
   const title = document.createElement("div");
   title.className = "rct-title";
   title.textContent = "RCT";
 
   layer.appendChild(aura);
+  layer.appendChild(symbol);
   layer.appendChild(orb);
   layer.appendChild(title);
 
-  setStatus("RCT — ENERGY RESTORATION");
+  // Expanding healing waves.
+  for (let i = 0; i < 3; i++) {
+    const wave = document.createElement("div");
+    wave.className = "rct-heal-wave";
+    layer.appendChild(wave);
+  }
+
+  // Lightweight white energy particles spiral toward the healing core.
+  for (let i = 0; i < 28; i++) {
+    const particle = document.createElement("span");
+    particle.className = "rct-particle";
+    particle.style.setProperty("--angle", `${Math.random() * 360}deg`);
+    particle.style.setProperty("--distance", `${180 + Math.random() * 300}px`);
+    particle.style.setProperty("--delay", `${Math.random() * 1.1}s`);
+    layer.appendChild(particle);
+  }
+
+  setStatus("RCT — REVERSED ENERGY");
 
   // RCT restores energy quickly, but fist remains the fastest recharge.
   const start = performance.now();
@@ -794,7 +822,7 @@ function processResults(results) {
   }
 
   if (rctActive) {
-    setStatus("RCT — ENERGY RESTORATION");
+    setStatus(`RCT — REVERSED ENERGY • HP ${Math.round(hp)}%`);
     return;
   }
 
@@ -936,6 +964,16 @@ demoBtn.addEventListener("click", () => {
 
 window.addEventListener("resize", resizeOverlay);
 updateEnergy();
+
+
+if (hudToggle && hudPanel) {
+  hudToggle.addEventListener("click", () => {
+    const hidden = hudPanel.classList.toggle("is-hidden");
+    hudToggle.textContent = hidden ? "+" : "−";
+    hudToggle.setAttribute("aria-expanded", String(!hidden));
+    hudToggle.setAttribute("aria-label", hidden ? "Show controls" : "Hide controls");
+  });
+}
 
 const damageBtn = document.querySelector("#damageBtn");
 if (damageBtn) {

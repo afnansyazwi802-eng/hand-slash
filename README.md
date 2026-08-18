@@ -170,3 +170,16 @@ MediaPipe now tracks up to two hands so Domain Expansion can use the two-hand ge
 - RCT restores HP over its 4-second duration, plus a smaller amount of Energy.
 - Added a `Test Damage` button so RCT can be tested immediately.
 - HP and Energy are capped at 100.
+
+
+## v13 HUD
+
+- HP is now displayed beside Energy in the combat HUD.
+- HP and Energy show numeric values and live bars.
+- The large Hand Slash control panel can be hidden with the small `−` button.
+- When hidden, the `+` button remains available to bring the controls back.
+
+
+## v14 RCT visual upgrade
+
+RCT now has a white reversed-energy animation: particles spiral inward toward the healing core, expanding healing waves pulse outward, and a rotating geometric healing symbol sits behind the orb. The effect stays CSS/DOM based and lightweight.

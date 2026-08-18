@@ -21,14 +21,29 @@
 
     <div class="combat-hud" aria-hidden="true">
       <div>COMBO <strong id="combo">0</strong></div>
-      <div class="energy-row">
-        ENERGY <span id="energyBar"><i></i></span>
+
+      <div class="resource-row">
+        <div class="resource-label">
+          <span>HP</span>
+          <span id="hpText">70 / 100</span>
+        </div>
+        <div class="resource-bar hp-bar"><i id="hpBar"></i></div>
+      </div>
+
+      <div class="resource-row">
+        <div class="resource-label">
+          <span>ENERGY</span>
+          <span id="energyText">100 / 100</span>
+        </div>
+        <div class="resource-bar energy-bar"><i id="energyBar"></i></div>
       </div>
     </div>
 
+    <button id="hudToggle" class="hud-toggle" type="button" aria-label="Hide controls" aria-expanded="true">−</button>
     <section class="hud">
-      <div>
-        <h1>HAND SLASH</h1>
+      <div class="hud-content">
+        <div>
+          <h1>HAND SLASH</h1>
         <p id="status">Press Start Camera</p>
       </div>
 
@@ -57,9 +72,10 @@
         Point with your index finger. Move your hand quickly to choose the slash direction.
         Horizontal, vertical, and diagonal slashes are supported.
       </p>
+      </div>
     </section>
   </main>
 
-  <script type="module" src="./app.js?v=12"></script>
+  <script type="module" src="./app.js?v=14"></script>
 </body>
 </html>
