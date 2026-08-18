@@ -114,27 +114,47 @@ function angle(a, b, c) {
   - middle/ring/pinky are bent
   This avoids the old wrist-distance test getting "stuck".
 */
+function isFingerExtended(hand, mcp, pip, dip, tip) {
+  // Extended fingers have a fingertip farther from the wrist than the PIP joint.
+  const wrist = hand[0];
+  const pipDist = distance(wrist, hand[pip]);
+  const tipDist = distance(wrist, hand[tip]);
+  return tipDist > pipDist * 1.10 && angle(hand[mcp], hand[pip], hand[tip]) > 135;
+}
+
+function isFingerBent(hand, mcp, pip, dip, tip) {
+  const wrist = hand[0];
+  const pipDist = distance(wrist, hand[pip]);
+  const tipDist = distance(wrist, hand[tip]);
+  return tipDist < pipDist * 1.18;
+}
+
 function isPointing(hand) {
-  const indexStraight =
-    angle(hand[5], hand[6], hand[8]) > 155;
+  const index = isFingerExtended(hand, 5, 6, 7, 8);
+  const middle = isFingerBent(hand, 9, 10, 11, 12);
+  const ring = isFingerBent(hand, 13, 14, 15, 16);
+  const pinky = isFingerBent(hand, 17, 18, 19, 20);
 
-  const middleBent =
-    angle(hand[9], hand[10], hand[12]) < 145;
+  return index && middle && ring && pinky;
+}
 
-  const ringBent =
-    angle(hand[13], hand[14], hand[16]) < 145;
+function isFist(hand) {
+  // Fist = all four long fingers folded toward the palm.
+  const middle = isFingerBent(hand, 9, 10, 11, 12);
+  const ring = isFingerBent(hand, 13, 14, 15, 16);
+  const pinky = isFingerBent(hand, 17, 18, 19, 20);
 
-  const pinkyBent =
-    angle(hand[17], hand[18], hand[20]) < 145;
+  // Index gets a little more tolerance because it is often partially visible.
+  const index = isFingerBent(hand, 5, 6, 7, 8);
 
-  return indexStraight && middleBent && ringBent && pinkyBent;
+  return index && middle && ring && pinky;
 }
 
 function isOpenPalm(hand) {
-  const index = angle(hand[5], hand[6], hand[8]) > 155;
-  const middle = angle(hand[9], hand[10], hand[12]) > 155;
-  const ring = angle(hand[13], hand[14], hand[16]) > 150;
-  const pinky = angle(hand[17], hand[18], hand[20]) > 145;
+  const index = isFingerExtended(hand, 5, 6, 7, 8);
+  const middle = isFingerExtended(hand, 9, 10, 11, 12);
+  const ring = isFingerExtended(hand, 13, 14, 15, 16);
+  const pinky = isFingerExtended(hand, 17, 18, 19, 20);
 
   return index && middle && ring && pinky;
 }
@@ -372,7 +392,12 @@ function activateDomain() {
   domainEndsAt = performance.now() + 5000;
 
   const layer = document.querySelector("#domainFx");
-  if (!layer) return;
+  if (!layer) {
+    domainActive = false;
+    energy = Math.min(100, energy + 40);
+    updateEnergy();
+    return;
+  }
 
   layer.innerHTML = "";
 
@@ -406,7 +431,9 @@ function activateDomain() {
 
   // One slash immediately, then roughly 4 per second.
   randomDomainSlash();
-  domainInterval = setInterval(randomDomainSlash, 240);
+  domainInterval = setInterval(() => {
+    if (performance.now() < domainEndsAt) randomDomainSlash();
+  }, 240);
 
   setTimeout(() => {
     domainActive = false;
@@ -449,7 +476,7 @@ function spawnParticles(point) {
 
 function spawnSlash(direction, point, demo = false) {
   const existing = slashLayer.querySelectorAll(".slash, .slash-fallback").length;
-  if (existing >= 3 && !demo) return;
+  if (existing >= (domainActive ? 5 : 3) && !demo) return;
 
   const pos = point
     ? screenToPercent(point)
@@ -609,19 +636,30 @@ function processResults(results) {
   if (!results?.landmarks?.length) {
     clearTracking();
     setStatus("No hand detected");
+    window.__openPalmStart = 0;
+    window.__fistLastTime = 0;
     return;
   }
 
   const hand = results.landmarks[0];
   const tip = drawHandTracking(hand);
+
   const pointing = isPointing(hand);
+  const fist = isFist(hand);
   const openPalm = isOpenPalm(hand);
 
   const now = performance.now();
 
-  if (!domainActive && openPalm && !pointing) {
-    if (!window.__openPalmStart) window.__openPalmStart = now;
-    if (now - window.__openPalmStart >= 1200) {
+  // DOMAIN: open palm must be held for ~1.2 seconds.
+  if (!domainActive && openPalm && !pointing && !fist) {
+    if (!window.__openPalmStart) {
+      window.__openPalmStart = now;
+    }
+
+    const held = now - window.__openPalmStart;
+    setStatus(`OPEN PALM — DOMAIN ${Math.min(100, Math.round(held / 1200 * 100))}%`);
+
+    if (held >= 1200) {
       activateDomain();
       window.__openPalmStart = 0;
       return;
@@ -635,14 +673,41 @@ function processResults(results) {
     return;
   }
 
+  // FIST: recharge continuously. Do not depend on frame rate.
+  if (fist) {
+    window.__fistLastTime ||= now;
+
+    const dt = Math.min(100, now - window.__fistLastTime);
+    window.__fistLastTime = now;
+
+    // 100 energy / second while holding fist.
+    energy = Math.min(100, energy + dt * 0.10);
+    updateEnergy();
+
+    setStatus(
+      energy >= 99.9
+        ? "✊ ENERGY FULL"
+        : `✊ RECHARGING ${Math.round(energy)}%`
+    );
+
+    // Fist should not accidentally trigger a slash.
+    previousTip = { ...tip };
+    previousTipTime = now;
+    return;
+  }
+
+  window.__fistLastTime = 0;
+
   if (!previousTip) {
     previousTip = { ...tip };
     previousTipTime = now;
-    setStatus(pointing ? "POINTING — move to slash" : "Hand detected — point");
+    setStatus(pointing ? "POINTING — move to slash" : "Hand detected — point or make a fist");
     return;
   }
 
   const dt = Math.max(16, now - previousTipTime);
+  const fromTip = { ...previousTip };
+
   const dx = tip.x - previousTip.x;
   const dy = tip.y - previousTip.y;
 
@@ -654,14 +719,12 @@ function processResults(results) {
   const movementRatio = movementPx / Math.max(1, diagonal);
   const speed = movementPx / dt;
 
-  // This is the "live" part: every detected hand movement leaves a tiny
-  // fading trace, so the user can feel that the system is following them.
   if (pointing && movementPx >= 5) {
-    drawMotionStreak(previousTip, tip);
+    drawMotionStreak(fromTip, tip);
   }
 
   if (!pointing) {
-    setStatus("Hand detected — point your index finger");
+    setStatus("Hand detected — point or make a fist");
     return;
   }
 
@@ -676,18 +739,14 @@ function processResults(results) {
 
   const sensitivity = Number(sensitivityEl.value);
 
-  // Threshold is based on the visible screen, not normalized landmark
-  // coordinates, so it behaves consistently on different screen sizes.
   if (
     movementRatio >= sensitivity &&
-    speed >= 0.35 &&
+    speed >= 0.25 &&
     now - lastSlashTime > COOLDOWN_MS
   ) {
     const direction = getDirection(dx, dy);
 
-    // Prevent the same direction from firing repeatedly because of tiny
-    // tracking oscillations.
-    if (movementRatio >= sensitivity * 1.25 || direction !== previousDirection) {
+    if (movementRatio >= sensitivity * 1.15 || direction !== previousDirection) {
       previousDirection = direction;
       triggerSlash(direction, tip);
     }

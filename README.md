@@ -144,3 +144,12 @@ Open-palm hold activates a 5-second Domain Expansion. While active, the page aut
 
 
 Domain activation is now a deliberate ~1.2 second open-palm hold, keeping it between the requested 1–2 second range.
+
+
+## v10 gesture reliability fix
+
+- Fist recognition now uses tolerant finger-folding checks.
+- Fist recharge is time-based, so it does not depend on camera/inference FPS.
+- Open-palm Domain activation is held for ~1.2 seconds and remains active for 5 seconds.
+- Domain random slash effects have a higher temporary slash cap.
+- Gesture status text clearly reports fist recharge and domain activation progress.
