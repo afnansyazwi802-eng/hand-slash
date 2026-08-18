@@ -38,6 +38,8 @@ let lastSlashTime = 0;
 let combo = 0;
 let comboTimer = 0;
 let energy = 100;
+let hp = 70;
+const MAX_HP = 100;
 let domainActive = false;
 let rctActive = false;
 let rctEndsAt = 0;
@@ -276,6 +278,29 @@ function screenToPercent(point) {
   };
 }
 
+function updateHP() {
+  const bar = document.querySelector("#hpBar");
+  const text = document.querySelector("#hpText");
+  if (!bar || !text) return;
+
+  hp = Math.max(0, Math.min(MAX_HP, hp));
+  bar.style.width = `${hp}%`;
+  text.textContent = `${Math.round(hp)} / ${MAX_HP}`;
+}
+
+function takeDamage(amount = 20) {
+  hp = Math.max(0, hp - amount);
+  updateHP();
+
+  const ui = document.querySelector(".hud") || document.body;
+  const flash = document.createElement("div");
+  flash.className = "damage-flash";
+  ui.appendChild(flash);
+  setTimeout(() => flash.remove(), 220);
+
+  setStatus(`💥 DAMAGE — HP ${Math.round(hp)}%`);
+}
+
 function updateEnergy() {
   if (energyBar) {
     energyBar.style.transform = `scaleX(${energy / 100})`;
@@ -405,7 +430,10 @@ function activateRCT() {
     const dt = Math.min(100, now - (window.__rctLastTime || now));
     window.__rctLastTime = now;
 
-    energy = Math.min(100, energy + dt * 0.055);
+    // RCT restores both HP and a smaller amount of cursed energy.
+    hp = Math.min(MAX_HP, hp + dt * 0.022);
+    energy = Math.min(100, energy + dt * 0.035);
+    updateHP();
     updateEnergy();
 
     if (now >= rctEndsAt) {
@@ -908,3 +936,8 @@ demoBtn.addEventListener("click", () => {
 
 window.addEventListener("resize", resizeOverlay);
 updateEnergy();
+
+const damageBtn = document.querySelector("#damageBtn");
+if (damageBtn) {
+  damageBtn.addEventListener("click", () => takeDamage(25));
+}

@@ -555,3 +555,37 @@ input[type="range"] {
 @keyframes rct-out {
   to { opacity: 0; }
 }
+
+
+.bar.hp {
+  position: relative;
+}
+
+.bar.hp::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(255,255,255,.15);
+  pointer-events: none;
+}
+
+#hpBar {
+  transition: width .18s ease-out;
+}
+
+#hpText {
+  font-variant-numeric: tabular-nums;
+}
+
+.damage-flash {
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,.16);
+  pointer-events: none;
+  animation: damage-flash .18s ease-out forwards;
+}
+
+@keyframes damage-flash {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}

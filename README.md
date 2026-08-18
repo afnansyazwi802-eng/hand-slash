@@ -162,3 +162,11 @@ Domain activation is now a deliberate ~1.2 second open-palm hold, keeping it bet
 - 🖐️🖐️ Two open palms held ~1.2s: Domain Expansion.
 - ☝️ Point + swipe: Dismantle.
 MediaPipe now tracks up to two hands so Domain Expansion can use the two-hand gesture.
+
+
+## v12 HP + RCT
+
+- Added a 100-point HP bar beside Energy.
+- RCT restores HP over its 4-second duration, plus a smaller amount of Energy.
+- Added a `Test Damage` button so RCT can be tested immediately.
+- HP and Energy are capped at 100.
