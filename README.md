@@ -183,3 +183,15 @@ MediaPipe now tracks up to two hands so Domain Expansion can use the two-hand ge
 ## v14 RCT visual upgrade
 
 RCT now has a white reversed-energy animation: particles spiral inward toward the healing core, expanding healing waves pulse outward, and a rotating geometric healing symbol sits behind the orb. The effect stays CSS/DOM based and lightweight.
+
+
+## v15 energy + RCT update
+
+- Energy capacity increased from 100 to 300.
+- Fist recharge is now medium speed instead of very fast.
+- RCT consumes Energy while healing instead of generating Energy.
+- RCT visual now follows the open-palm hand position.
+- Domain Expansion costs 90 Energy.
+- The HUD control toggle is now a clearly visible HIDE/SHOW pill outside the control panel.
+
+- RCT follows the open-palm hand position during healing.

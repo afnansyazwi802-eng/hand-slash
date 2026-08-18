@@ -42,7 +42,8 @@ let lastDetectionTime = 0;
 let lastSlashTime = 0;
 let combo = 0;
 let comboTimer = 0;
-let energy = 100;
+const MAX_ENERGY = 300;
+let energy = MAX_ENERGY;
 let hp = 70;
 const MAX_HP = 100;
 let domainActive = false;
@@ -307,10 +308,10 @@ function takeDamage(amount = 20) {
 
 function updateEnergy() {
   if (energyBar) {
-    energyBar.style.transform = `scaleX(${energy / 100})`;
+    energyBar.style.transform = `scaleX(${energy / MAX_ENERGY})`;
   }
   if (energyText) {
-    energyText.textContent = `${Math.round(energy)} / 100`;
+    energyText.textContent = `${Math.round(energy)} / ${MAX_ENERGY}`;
   }
 }
 
@@ -326,7 +327,7 @@ function addCombo() {
 
   if (comboEl) comboEl.textContent = combo;
 
-  energy = Math.min(100, energy + 5);
+  energy = Math.min(MAX_ENERGY, energy + 5);
   updateEnergy();
 }
 
@@ -397,8 +398,37 @@ function spawnImpact(point, direction) {
 }
 
 
-function activateRCT() {
-  if (domainActive || rctActive) return;
+function getPalmCenter(hand) {
+  const indices = [0, 5, 9, 13, 17];
+  let x = 0;
+  let y = 0;
+  for (const i of indices) {
+    const p = videoPointToScreen(hand[i]);
+    x += p.x;
+    y += p.y;
+  }
+  return { x: x / indices.length, y: y / indices.length };
+}
+
+function updateRCTPosition(point) {
+  const layer = document.querySelector("#rctFx");
+  if (!layer || !point) return;
+
+  const rect = video.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+
+  const x = Math.max(8, Math.min(92, point.x / rect.width * 100));
+  const y = Math.max(10, Math.min(90, point.y / rect.height * 100));
+
+  layer.style.setProperty("--rct-x", `${x}%`);
+  layer.style.setProperty("--rct-y", `${y}%`);
+}
+
+function activateRCT(anchorPoint) {
+  if (domainActive || rctActive || energy < 40) {
+    if (energy < 40) setStatus("Not enough energy for RCT");
+    return;
+  }
 
   rctActive = true;
   rctEndsAt = performance.now() + 4000;
@@ -410,6 +440,10 @@ function activateRCT() {
   }
 
   layer.innerHTML = "";
+  updateRCTPosition(anchorPoint);
+
+  const anchor = document.createElement("div");
+  anchor.className = "rct-anchor";
 
   const aura = document.createElement("div");
   aura.className = "rct-aura";
@@ -424,16 +458,17 @@ function activateRCT() {
   title.className = "rct-title";
   title.textContent = "RCT";
 
-  layer.appendChild(aura);
-  layer.appendChild(symbol);
-  layer.appendChild(orb);
-  layer.appendChild(title);
+  anchor.appendChild(aura);
+  anchor.appendChild(symbol);
+  anchor.appendChild(orb);
+  anchor.appendChild(title);
 
   // Expanding healing waves.
   for (let i = 0; i < 3; i++) {
     const wave = document.createElement("div");
     wave.className = "rct-heal-wave";
-    layer.appendChild(wave);
+    wave.style.animationDelay = `${i * 0.48}s`;
+    anchor.appendChild(wave);
   }
 
   // Lightweight white energy particles spiral toward the healing core.
@@ -443,10 +478,12 @@ function activateRCT() {
     particle.style.setProperty("--angle", `${Math.random() * 360}deg`);
     particle.style.setProperty("--distance", `${180 + Math.random() * 300}px`);
     particle.style.setProperty("--delay", `${Math.random() * 1.1}s`);
-    layer.appendChild(particle);
+    anchor.appendChild(particle);
   }
 
-  setStatus("RCT — REVERSED ENERGY");
+  layer.appendChild(anchor);
+
+  setStatus(`RCT — REVERSED ENERGY • HP ${Math.round(hp)} • EN ${Math.round(energy)}`);
 
   // RCT restores energy quickly, but fist remains the fastest recharge.
   const start = performance.now();
@@ -458,11 +495,23 @@ function activateRCT() {
     const dt = Math.min(100, now - (window.__rctLastTime || now));
     window.__rctLastTime = now;
 
-    // RCT restores both HP and a smaller amount of cursed energy.
+    // RCT heals HP by consuming cursed energy.
     hp = Math.min(MAX_HP, hp + dt * 0.022);
-    energy = Math.min(100, energy + dt * 0.035);
+    energy = Math.max(0, energy - dt * 0.018);
     updateHP();
     updateEnergy();
+
+    if (energy <= 0) {
+      rctActive = false;
+      window.__rctLastTime = 0;
+      layer.classList.add("rct-out");
+      setTimeout(() => {
+        layer.innerHTML = "";
+        layer.classList.remove("rct-out");
+        setStatus("RCT stopped — energy empty");
+      }, 380);
+      return;
+    }
 
     if (now >= rctEndsAt) {
       rctActive = false;
@@ -503,9 +552,9 @@ function randomDomainSlash() {
 }
 
 function activateDomain() {
-  if (domainActive || energy < 40) return;
+  if (domainActive || energy < 90) return;
 
-  energy -= 40;
+  energy -= 90;
   updateEnergy();
 
   domainActive = true;
@@ -514,7 +563,7 @@ function activateDomain() {
   const layer = document.querySelector("#domainFx");
   if (!layer) {
     domainActive = false;
-    energy = Math.min(100, energy + 40);
+    energy = Math.min(MAX_ENERGY, energy + 90);
     updateEnergy();
     return;
   }
@@ -813,7 +862,7 @@ function processResults(results) {
     setStatus(`🖐️ RCT ${Math.min(100, Math.round(held / 800 * 100))}%`);
 
     if (held >= 800) {
-      activateRCT();
+      activateRCT(getPalmCenter(hand));
       window.__openPalmStart = 0;
       return;
     }
@@ -822,7 +871,8 @@ function processResults(results) {
   }
 
   if (rctActive) {
-    setStatus(`RCT — REVERSED ENERGY • HP ${Math.round(hp)}%`);
+    updateRCTPosition(getPalmCenter(hand));
+    setStatus(`RCT — REVERSED ENERGY • HP ${Math.round(hp)} • EN ${Math.round(energy)}`);
     return;
   }
 
@@ -833,13 +883,13 @@ function processResults(results) {
     const dt = Math.min(100, now - window.__fistLastTime);
     window.__fistLastTime = now;
 
-    energy = Math.min(100, energy + dt * 0.10);
+    energy = Math.min(MAX_ENERGY, energy + dt * 0.024);
     updateEnergy();
 
     setStatus(
-      energy >= 99.9
+      energy >= MAX_ENERGY - 0.1
         ? "✊ ENERGY FULL"
-        : `✊ RECHARGING ${Math.round(energy)}%`
+        : `✊ RECHARGING ${Math.round(energy)} / ${MAX_ENERGY}`
     );
 
     previousTip = { ...tip };
@@ -964,12 +1014,13 @@ demoBtn.addEventListener("click", () => {
 
 window.addEventListener("resize", resizeOverlay);
 updateEnergy();
+updateHP();
 
 
 if (hudToggle && hudPanel) {
   hudToggle.addEventListener("click", () => {
     const hidden = hudPanel.classList.toggle("is-hidden");
-    hudToggle.textContent = hidden ? "+" : "−";
+    hudToggle.textContent = hidden ? "SHOW" : "HIDE";
     hudToggle.setAttribute("aria-expanded", String(!hidden));
     hudToggle.setAttribute("aria-label", hidden ? "Show controls" : "Hide controls");
   });

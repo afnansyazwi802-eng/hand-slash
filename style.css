@@ -790,3 +790,46 @@ input[type="range"] {
   from { rotate: 0deg; }
   to { rotate: 360deg; }
 }
+
+
+/* v15: RCT follows the user's open palm */
+.rct-anchor {
+  position: absolute;
+  left: var(--rct-x, 50%);
+  top: var(--rct-y, 50%);
+  width: 1px;
+  height: 1px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.rct-anchor .rct-aura,
+.rct-anchor .rct-orb,
+.rct-anchor .rct-symbol,
+.rct-anchor .rct-title,
+.rct-anchor .rct-heal-wave,
+.rct-anchor .rct-particle {
+  left: 0;
+  top: 0;
+}
+
+/* Make the control toggle unmistakably visible outside the large panel. */
+.hud-toggle {
+  left: min(464px, calc(100vw - 70px));
+  top: 24px;
+  width: 58px;
+  height: 34px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  z-index: 50;
+}
+
+@media (max-width: 600px) {
+  .hud-toggle {
+    left: auto;
+    right: 12px;
+    top: 12px;
+  }
+}
