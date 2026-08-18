@@ -153,3 +153,12 @@ Domain activation is now a deliberate ~1.2 second open-palm hold, keeping it bet
 - Open-palm Domain activation is held for ~1.2 seconds and remains active for 5 seconds.
 - Domain random slash effects have a higher temporary slash cap.
 - Gesture status text clearly reports fist recharge and domain activation progress.
+
+
+## v11 gesture layout
+
+- ✊ One fist: fastest energy recharge.
+- 🖐️ One open palm held ~0.8s: RCT, a 4-second energy restoration state.
+- 🖐️🖐️ Two open palms held ~1.2s: Domain Expansion.
+- ☝️ Point + swipe: Dismantle.
+MediaPipe now tracks up to two hands so Domain Expansion can use the two-hand gesture.

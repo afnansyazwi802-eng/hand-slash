@@ -39,6 +39,8 @@ let combo = 0;
 let comboTimer = 0;
 let energy = 100;
 let domainActive = false;
+let rctActive = false;
+let rctEndsAt = 0;
 let domainEndsAt = 0;
 let domainInterval = null;
 
@@ -61,7 +63,7 @@ async function createHandLandmarker() {
       modelAssetPath: MODEL_URL
     },
     runningMode: "VIDEO",
-    numHands: 1,
+    numHands: 2,
     minHandDetectionConfidence: 0.55,
     minHandPresenceConfidence: 0.55,
     minTrackingConfidence: 0.55
@@ -363,6 +365,68 @@ function spawnImpact(point, direction) {
 }
 
 
+function activateRCT() {
+  if (domainActive || rctActive) return;
+
+  rctActive = true;
+  rctEndsAt = performance.now() + 4000;
+
+  const layer = document.querySelector("#rctFx");
+  if (!layer) {
+    rctActive = false;
+    return;
+  }
+
+  layer.innerHTML = "";
+
+  const aura = document.createElement("div");
+  aura.className = "rct-aura";
+
+  const orb = document.createElement("div");
+  orb.className = "rct-orb";
+
+  const title = document.createElement("div");
+  title.className = "rct-title";
+  title.textContent = "RCT";
+
+  layer.appendChild(aura);
+  layer.appendChild(orb);
+  layer.appendChild(title);
+
+  setStatus("RCT — ENERGY RESTORATION");
+
+  // RCT restores energy quickly, but fist remains the fastest recharge.
+  const start = performance.now();
+
+  const tick = () => {
+    if (!rctActive) return;
+
+    const now = performance.now();
+    const dt = Math.min(100, now - (window.__rctLastTime || now));
+    window.__rctLastTime = now;
+
+    energy = Math.min(100, energy + dt * 0.055);
+    updateEnergy();
+
+    if (now >= rctEndsAt) {
+      rctActive = false;
+      window.__rctLastTime = 0;
+      layer.classList.add("rct-out");
+
+      setTimeout(() => {
+        layer.innerHTML = "";
+        layer.classList.remove("rct-out");
+        setStatus("RCT ended — show your hand");
+      }, 380);
+      return;
+    }
+
+    requestAnimationFrame(tick);
+  };
+
+  requestAnimationFrame(tick);
+}
+
 function randomDomainSlash() {
   if (!domainActive) return;
 
@@ -633,39 +697,47 @@ function triggerSlash(direction, point, demo = false) {
 }
 
 function processResults(results) {
-  if (!results?.landmarks?.length) {
+  const hands = results?.landmarks || [];
+
+  if (!hands.length) {
     clearTracking();
     setStatus("No hand detected");
     window.__openPalmStart = 0;
+    window.__twoPalmStart = 0;
     window.__fistLastTime = 0;
     return;
   }
 
-  const hand = results.landmarks[0];
+  // Draw the first hand as the main tracking hand.
+  const hand = hands[0];
   const tip = drawHandTracking(hand);
 
   const pointing = isPointing(hand);
   const fist = isFist(hand);
   const openPalm = isOpenPalm(hand);
+  const twoOpenPalms =
+    hands.length >= 2 &&
+    isOpenPalm(hands[0]) &&
+    isOpenPalm(hands[1]);
 
   const now = performance.now();
 
-  // DOMAIN: open palm must be held for ~1.2 seconds.
-  if (!domainActive && openPalm && !pointing && !fist) {
-    if (!window.__openPalmStart) {
-      window.__openPalmStart = now;
+  // DOMAIN: BOTH HANDS OPEN + held for ~1.2 seconds.
+  if (!domainActive && !rctActive && twoOpenPalms) {
+    if (!window.__twoPalmStart) {
+      window.__twoPalmStart = now;
     }
 
-    const held = now - window.__openPalmStart;
-    setStatus(`OPEN PALM — DOMAIN ${Math.min(100, Math.round(held / 1200 * 100))}%`);
+    const held = now - window.__twoPalmStart;
+    setStatus(`🖐️🖐️ DOMAIN ${Math.min(100, Math.round(held / 1200 * 100))}%`);
 
     if (held >= 1200) {
       activateDomain();
-      window.__openPalmStart = 0;
+      window.__twoPalmStart = 0;
       return;
     }
-  } else if (!openPalm) {
-    window.__openPalmStart = 0;
+  } else if (!twoOpenPalms) {
+    window.__twoPalmStart = 0;
   }
 
   if (domainActive) {
@@ -673,14 +745,38 @@ function processResults(results) {
     return;
   }
 
-  // FIST: recharge continuously. Do not depend on frame rate.
+  // RCT: ONE open palm held for ~0.8 seconds.
+  // Two palms are reserved for Domain Expansion.
+  if (!rctActive && openPalm && !twoOpenPalms && !pointing && !fist) {
+    if (!window.__openPalmStart) {
+      window.__openPalmStart = now;
+    }
+
+    const held = now - window.__openPalmStart;
+
+    setStatus(`🖐️ RCT ${Math.min(100, Math.round(held / 800 * 100))}%`);
+
+    if (held >= 800) {
+      activateRCT();
+      window.__openPalmStart = 0;
+      return;
+    }
+  } else if (!openPalm || twoOpenPalms) {
+    window.__openPalmStart = 0;
+  }
+
+  if (rctActive) {
+    setStatus("RCT — ENERGY RESTORATION");
+    return;
+  }
+
+  // FIST: fastest recharge.
   if (fist) {
     window.__fistLastTime ||= now;
 
     const dt = Math.min(100, now - window.__fistLastTime);
     window.__fistLastTime = now;
 
-    // 100 energy / second while holding fist.
     energy = Math.min(100, energy + dt * 0.10);
     updateEnergy();
 
@@ -690,7 +786,6 @@ function processResults(results) {
         : `✊ RECHARGING ${Math.round(energy)}%`
     );
 
-    // Fist should not accidentally trigger a slash.
     previousTip = { ...tip };
     previousTipTime = now;
     return;
@@ -701,7 +796,7 @@ function processResults(results) {
   if (!previousTip) {
     previousTip = { ...tip };
     previousTipTime = now;
-    setStatus(pointing ? "POINTING — move to slash" : "Hand detected — point or make a fist");
+    setStatus(pointing ? "POINTING — move to slash" : "Hand detected — point, fist, or palm");
     return;
   }
 
@@ -724,7 +819,7 @@ function processResults(results) {
   }
 
   if (!pointing) {
-    setStatus("Hand detected — point or make a fist");
+    setStatus("Hand detected — point, fist, or palm");
     return;
   }
 
