@@ -81,7 +81,7 @@ Higher values require a faster/larger movement.
 
 The camera stays in the browser. This project does not upload camera frames to a server.
 
-The MediaPipe model and runtime are loaded from Google's MediaPipe model hosting and jsDelivr.
+The MediaPipe runtime is loaded from jsDelivr using @mediapipe/tasks-vision 0.10.35, and the hand model is loaded from Google's MediaPipe model hosting.
 
 ## Customize the effect
 
