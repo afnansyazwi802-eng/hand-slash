@@ -18,6 +18,7 @@ let lastHands=[];
 let previousIndex=null,previousPalm=null,pointStarted=null;
 let lastSlashTime=0,fistSince=0,openSince=0,domainSince=0;
 let rctActive=false,domainActive=false;
+    window.setDomainOverlay?.(false);
 let cameraRunning=false,processing=false,handsReady=false;
 let audioCtx=null;
 let domainEnd=0,nextDomainSlash=0;
@@ -109,7 +110,11 @@ function spawnSlash(x,y,a){addSlash(x,y,a)}
 
 function triggerDomain(){
   if(domainActive || energy<45) return;
-  domainActive=true; domainEnd=performance.now()+5000; nextDomainSlash=0;
+  // Domain and RCT are mutually exclusive.
+  rctActive=false;
+  openSince=0;
+  domainActive=true;
+    window.setDomainOverlay?.(true); domainEnd=performance.now()+5000; nextDomainSlash=0;
   energy-=45; updateHud(); beep(70,.4);
   statusEl.textContent='DOMAIN EXPANSION — random Dismantle slashes for 5 seconds';
 }
@@ -200,10 +205,38 @@ function onResults(res){
     fistSince=openSince=domainSince=0;rctActive=false;return;
   }
 
+  // Two-hand mode has priority over every single-hand skill.
+  // This prevents an open palm on either hand from activating RCT while
+  // the player is forming Domain Expansion.
   if(lastHands.length>=2){
+    rctActive=false;
+    openSince=0;
+    fistSince=0;
+    pointStarted=null;
+    previousIndex=null;
+
     if(!domainSince)domainSince=now;
     if(now-domainSince>500)triggerDomain();
-  }else domainSince=0;
+
+    // While two hands are visible, never run the one-hand RCT/Dismantle
+    // gesture logic below. Domain owns the input until one hand remains.
+    if(domainActive) previousPalm=null;
+    return;
+  }else{
+    domainSince=0;
+  }
+
+  // Domain owns the input while active. A single hand appearing during the
+  // 5-second Domain window must not restart RCT or Dismantle.
+  if(domainActive){
+    rctActive=false;
+    openSince=0;
+    fistSince=0;
+    pointStarted=null;
+    previousIndex=null;
+    previousPalm=null;
+    return;
+  }
 
   // Prefer the first detected hand for single-hand skills.
   const lm=lastHands[0];
@@ -274,3 +307,36 @@ document.getElementById('test').onclick=()=>addSlash(W/2,H/2,Math.random()*Math.
 document.getElementById('hide').onclick=()=>panel.hidden=!panel.hidden;
 document.getElementById('show').onclick=()=>panel.hidden=false;
 addEventListener('keydown',e=>{if(e.key.toLowerCase()==='h')panel.hidden=!panel.hidden});
+
+
+/* v33 Domain Expansion overlay */
+(function () {
+  const overlay = document.getElementById('domain-overlay');
+  if (!overlay) return;
+
+  window.setDomainOverlay = function(active) {
+    overlay.classList.toggle('active', !!active);
+    overlay.setAttribute('aria-hidden', active ? 'false' : 'true');
+  };
+
+  // If the app already exposes a domain flag, this helper can be called directly.
+  // We also watch for common state changes used by the v32 build.
+  const originalSetTimeout = window.setTimeout;
+  window.domainOverlayAutoHide = function(ms) {
+    window.setDomainOverlay(true);
+    originalSetTimeout(() => window.setDomainOverlay(false), ms || 5000);
+  };
+})();
+
+/* v33 fallback: synchronize aura with a visible domain state if the existing
+   app uses a HUD/status element rather than a named domainActive variable. */
+(function () {
+  const overlay = document.getElementById('domain-overlay');
+  if (!overlay) return;
+  const scan = () => {
+    const text = document.body.innerText || '';
+    const active = /DOMAIN\s+EXPANSION/i.test(text) && /5s|ACTIVE/i.test(text);
+    if (active) window.setDomainOverlay?.(true);
+  };
+  new MutationObserver(scan).observe(document.body, {subtree:true, childList:true, characterData:true});
+})();

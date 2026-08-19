@@ -1,15 +1,17 @@
-# Hand Slash v31 — 2-Hand Tracking + RCT + Domain VFX
+# Hand Slash v32 — Domain Priority Fix
 
-This version fixes the gesture feedback and skill logic.
+## Gesture priority
+- **2 hands:** Domain Expansion has priority and disables RCT/Dismantle while active.
+- **Open palm (one hand):** RCT. Consumes Energy and restores HP.
+- **Fist:** Medium-speed Energy recovery.
+- **Point + move (one hand):** Dismantle.
 
-- MediaPipe Hands detects up to 2 hands.
-- Full hand landmarks/skeleton are drawn on the camera overlay.
-- Pointing index + movement fires one fixed Dismantle slash.
-- Fist recharges Energy at a medium speed.
-- Open palm activates RCT at the palm, consumes Energy, and restores HP. RCT stops immediately when the palm closes/disappears.
-- Two visible hands for about 0.5 seconds activates Domain Expansion.
-- Domain runs for 5 seconds and continuously spawns random Dismantle slashes at random positions/directions.
-- The current `dismantle-vfx.png` is the only slash VFX.
-- Tracking uses MediaPipe modelComplexity 0 and a 960x540 ideal camera stream for lighter laptop usage.
+## Domain
+Two hands held for about 0.5 seconds activate Domain Expansion. It lasts 5 seconds and generates random fixed Dismantle slashes. RCT cannot activate at the same time.
 
-GitHub Pages must be served over HTTPS and the browser must have camera permission.
+## Files
+- `app.js`
+- `index.html`
+- `style.css`
+- `dismantle-vfx.png`
+- `favicon.svg`
