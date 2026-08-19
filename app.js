@@ -680,27 +680,27 @@ function spawnSlash(direction, point, demo = false, vector = null) {
   // The supplied Dismantle artwork points up-right at about -30° in its
   // natural orientation. Add 30° so its blade direction exactly matches
   // the user's movement direction.
-  const ART_DIRECTION = -30;
+  const ART_DIRECTION = 0;
   const finalRotation = angle - ART_DIRECTION;
 
   // Keep the effect large enough to feel powerful, but small enough that
   // the user can still see most of it on screen.
   const slashWidth = Math.max(
     420,
-    Math.min(760, Math.min(rect.width, rect.height) * 0.92)
+    Math.min(700, Math.min(rect.width, rect.height) * 0.78)
   );
-  const slashHeight = slashWidth * (869 / 1515);
+  const slashHeight = slashWidth * (682 / 2048);
 
   const slash = document.createElement("img");
   slash.className = "slash slash-dismantle-v20";
-  slash.src = "./dismantle-vfx.png?v=20";
+  slash.src = "./dismantle-vfx.png?v=21";
   slash.alt = "";
   slash.draggable = false;
 
   // The artwork's lower-left release point becomes the fingertip.
   // IMPORTANT: left/top must compensate for the transform origin.
-  const ORIGIN_X = 0.03;
-  const ORIGIN_Y = 0.97;
+  const ORIGIN_X = 48 / 2048;
+  const ORIGIN_Y = 381 / 682;
 
   slash.style.width = `${slashWidth}px`;
   slash.style.left = `${fingerX - slashWidth * ORIGIN_X}px`;

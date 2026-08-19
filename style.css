@@ -922,7 +922,7 @@ input[type="range"] {
   user-select: none;
   mix-blend-mode: normal;
   will-change: transform, opacity, filter;
-  transform-origin: 3% 97%;
+  transform-origin: 2.34375% 55.8651%;
 }
 
 .slash-fragment-v19 {
@@ -945,7 +945,7 @@ input[type="range"] {
   pointer-events: none;
   user-select: none;
   mix-blend-mode: normal;
-  transform-origin: 3% 97%;
+  transform-origin: 2.34375% 55.8651%;
   will-change: transform, opacity, filter;
 }
 
