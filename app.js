@@ -658,27 +658,7 @@ function spawnParticles(point) {
   }
 }
 
-function updateActiveDismantle(point) {
-  if (!activeDismantle || !point) return;
-
-  const videoRect = video.getBoundingClientRect();
-  const layerRect = slashLayer.getBoundingClientRect();
-
-  const x = point.x + videoRect.left - layerRect.left;
-  const y = point.y + videoRect.top - layerRect.top;
-
-  activeDismantle.x = x;
-  activeDismantle.y = y;
-
-  // Keep the slash's origin locked to the fingertip.
-  activeDismantle.element.style.left = `${x}px`;
-  activeDismantle.element.style.top = `${y}px`;
-}
-
 function spawnSlash(direction, point, demo = false, vector = null) {
-  const existing = slashLayer.querySelectorAll(".dismantle-projectile").length;
-  if (existing >= (domainActive ? 5 : 2) && !demo) return;
-
   const videoRect = video.getBoundingClientRect();
   const layerRect = slashLayer.getBoundingClientRect();
   const launch = point || {
@@ -686,26 +666,27 @@ function spawnSlash(direction, point, demo = false, vector = null) {
     y: videoRect.height * 0.5
   };
 
-  // The slash direction is determined by the actual finger movement.
   let angle = Number.isFinite(direction?.angle) ? direction.angle : 0;
   if (vector && !demo) {
     angle = (Math.atan2(vector.y, vector.x) * 180 / Math.PI + 360) % 360;
   }
 
-  // The source artwork points along its own diagonal axis.
-  // This correction aligns the artwork with the finger movement.
+  // The artwork itself is diagonal, so compensate for its built-in angle.
   const ART_AXIS_DEG = -30;
   const rotation = angle - ART_AXIS_DEG;
 
   const diagonal = Math.hypot(videoRect.width, videoRect.height);
-
-  // Smaller than the projectile version so the slash remains visible
-  // while staying attached to the fingertip.
   const slashWidth = Math.max(280, Math.min(520, diagonal * 0.38));
   const slashHeight = slashWidth * (869 / 1515);
 
   const startX = launch.x + videoRect.left - layerRect.left;
   const startY = launch.y + videoRect.top - layerRect.top;
+
+  // Never leave old normal slashes behind. There is one live Dismantle only.
+  if (!demo && activeDismantle?.element) {
+    activeDismantle.element.remove();
+    activeDismantle = null;
+  }
 
   const projectile = document.createElement("div");
   projectile.className = "dismantle-projectile";
@@ -716,7 +697,7 @@ function spawnSlash(direction, point, demo = false, vector = null) {
   projectile.style.setProperty("--slash-rotation", `${rotation}deg`);
 
   const slash = document.createElement("img");
-  slash.src = `./dismantle-vfx.png?v=22`;
+  slash.src = `./dismantle-vfx.png?v=26`;
   slash.alt = "";
   slash.draggable = false;
   slash.className = "dismantle-projectile-art";
@@ -726,10 +707,7 @@ function spawnSlash(direction, point, demo = false, vector = null) {
   projectile.appendChild(slash);
   slashLayer.appendChild(projectile);
 
-  // The slash is CENTER-ANCHORED on the fingertip.
-  // The fingertip is the middle of the cut, never its left/right edge.
-  // It does not travel forward; only its length snaps outward.
-  const duration = demo ? 520 : 300;
+  const duration = demo ? 520 : 360;
   const start = performance.now();
 
   const active = {
@@ -737,14 +715,12 @@ function spawnSlash(direction, point, demo = false, vector = null) {
     x: startX,
     y: startY,
     angle,
-    rotation
+    rotation,
+    vector: vector ? { ...vector } : { x: 1, y: 0 },
+    artAxisDeg: ART_AXIS_DEG
   };
 
-  // Only one normal slash is attached to the finger at a time.
-  if (!demo && activeDismantle?.element) {
-    activeDismantle.element.remove();
-  }
-  activeDismantle = active;
+  if (!demo) activeDismantle = active;
 
   function animateSlash(now) {
     if (!projectile.isConnected) return;
@@ -752,34 +728,29 @@ function spawnSlash(direction, point, demo = false, vector = null) {
     const elapsed = now - start;
     const t = Math.min(1, elapsed / duration);
 
-    // Fast "snap" into existence, then a short hold.
-    const grow = Math.min(1, t / 0.10);
-    const scaleX = 0.06 + grow * 0.94;
+    // Quick manifestation: small -> full size, then a short hold/fade.
+    const growT = Math.min(1, t / 0.11);
+    const grow = 0.06 + growT * 0.94;
 
     let opacity = 1;
-    if (t < 0.035) {
-      opacity = t / 0.035;
-    } else if (t > 0.82) {
-      opacity = 1 - ((t - 0.82) / 0.18);
-    }
+    if (t < 0.025) opacity = t / 0.025;
+    else if (t > 0.78) opacity = 1 - ((t - 0.78) / 0.22);
 
+    // Position is a snapshot: once spawned, the slash stays fixed in place.
     projectile.style.transform =
-      `translate3d(-50%, -50%, 0) rotate(${rotation}deg) scaleX(${scaleX})`;
+      `translate3d(-50%, -50%, 0) rotate(var(--slash-rotation, 0deg)) scaleX(${grow})`;
     projectile.style.opacity = opacity.toFixed(3);
 
     if (t < 1) {
       requestAnimationFrame(animateSlash);
     } else {
-      if (activeDismantle?.element === projectile) {
-        activeDismantle = null;
-      }
+      if (activeDismantle?.element === projectile) activeDismantle = null;
       projectile.remove();
     }
   }
 
   requestAnimationFrame(animateSlash);
 
-  // Tiny fragments stay around the slash center instead of becoming projectiles.
   const fragmentCount = demo ? 3 : 1;
   for (let i = 0; i < fragmentCount; i++) {
     const fragment = document.createElement("span");
@@ -839,7 +810,6 @@ function processResults(results) {
   // Draw the first hand as the main tracking hand.
   const hand = hands[0];
   const tip = drawHandTracking(hand);
-  updateActiveDismantle(tip);
 
   const pointing = isPointing(hand);
   const fist = isFist(hand);

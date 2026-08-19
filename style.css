@@ -979,3 +979,33 @@ input[type="range"] {
   mix-blend-mode: screen;
   transform-origin: 0 100%;
 }
+
+
+/* v25: Dismantle follows the live fingertip while visible. The fingertip is
+   the CENTER anchor, never the edge, and the image rotates around its center. */
+.dismantle-projectile {
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;
+  transform-origin: center center !important;
+  will-change: transform, opacity;
+  overflow: visible;
+  mix-blend-mode: screen;
+}
+
+.dismantle-projectile-art {
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  display: block;
+  object-fit: contain;
+  object-position: center;
+  transform: translate(-50%, -50%) !important;
+  transform-origin: center center !important;
+  user-select: none;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
