@@ -306,24 +306,13 @@ function takeDamage(amount = 20) {
   setStatus(`💥 DAMAGE — HP ${Math.round(hp)}%`);
 }
 
-function setEnergyMode(mode = "normal") {
-  const bars = document.querySelectorAll(".energy-bar");
-  bars.forEach((bar) => {
-    bar.classList.remove("recharging", "rct", "domain");
-    if (mode === "recharging" || mode === "rct" || mode === "domain") {
-      bar.classList.add(mode);
-    }
-  });
-}
-
-function updateEnergy(mode = null) {
+function updateEnergy() {
   if (energyBar) {
-    energyBar.style.transform = `scaleX(${Math.max(0, Math.min(1, energy / MAX_ENERGY))})`;
+    energyBar.style.transform = `scaleX(${energy / MAX_ENERGY})`;
   }
   if (energyText) {
     energyText.textContent = `${Math.round(energy)} / ${MAX_ENERGY}`;
   }
-  if (mode) setEnergyMode(mode);
 }
 
 function addCombo() {
@@ -435,30 +424,23 @@ function updateRCTPosition(point) {
   layer.style.setProperty("--rct-y", `${y}%`);
 }
 
-function stopRCT(reason = "gesture lost") {
+function stopRCT(reason = "RCT stopped") {
   if (!rctActive) return;
 
   rctActive = false;
-  setEnergyMode("normal");
-  rctEndsAt = 0;
   window.__rctLastTime = 0;
 
   const layer = document.querySelector("#rctFx");
-  if (!layer) {
-    setStatus(reason === "gesture lost" ? "RCT stopped — show open palm" : reason);
-    return;
-  }
+  if (!layer) return;
 
-  layer.classList.remove("rct-out");
-  void layer.offsetWidth;
   layer.classList.add("rct-out");
 
   setTimeout(() => {
     layer.innerHTML = "";
     layer.classList.remove("rct-out");
-  }, 380);
+  }, 360);
 
-  setStatus(reason === "gesture lost" ? "RCT stopped — show open palm" : reason);
+  setStatus(reason);
 }
 
 function activateRCT(anchorPoint) {
@@ -468,7 +450,6 @@ function activateRCT(anchorPoint) {
   }
 
   rctActive = true;
-  setEnergyMode("rct");
   rctEndsAt = performance.now() + 4000;
 
   const layer = document.querySelector("#rctFx");
@@ -540,12 +521,27 @@ function activateRCT(anchorPoint) {
     updateEnergy();
 
     if (energy <= 0) {
-      stopRCT("RCT stopped — energy empty");
+      rctActive = false;
+      window.__rctLastTime = 0;
+      layer.classList.add("rct-out");
+      setTimeout(() => {
+        layer.innerHTML = "";
+        layer.classList.remove("rct-out");
+        setStatus("RCT stopped — energy empty");
+      }, 380);
       return;
     }
 
     if (now >= rctEndsAt) {
-      stopRCT("RCT ended — show open palm");
+      rctActive = false;
+      window.__rctLastTime = 0;
+      layer.classList.add("rct-out");
+
+      setTimeout(() => {
+        layer.innerHTML = "";
+        layer.classList.remove("rct-out");
+        setStatus("RCT ended — show your hand");
+      }, 380);
       return;
     }
 
@@ -578,7 +574,7 @@ function activateDomain() {
   if (domainActive || energy < 90) return;
 
   energy -= 90;
-  updateEnergy("domain");
+  updateEnergy();
 
   domainActive = true;
   domainEndsAt = performance.now() + 5000;
@@ -666,13 +662,12 @@ function spawnParticles(point) {
   }
 }
 
-function spawnSlash(direction, point, demo = false, slashVector = null) {
+function spawnSlash(direction, point, demo = false, vector = null) {
   const existing = slashLayer.querySelectorAll(".slash, .slash-fallback").length;
   if (existing >= (domainActive ? 5 : 3) && !demo) return;
 
-  const pos = point
-    ? screenToPercent(point)
-    : { x: 50, y: 50 };
+  const pos = point ? screenToPercent(point) : { x: 50, y: 50 };
+  const hasGestureVector = !!vector && !demo && !domainActive;
 
   const angle =
     direction === "diagonal-up"
@@ -681,112 +676,96 @@ function spawnSlash(direction, point, demo = false, slashVector = null) {
         ? 25
         : 0;
 
-  const src =
-    direction === "vertical"
-      ? VERTICAL_ASSET
-      : HORIZONTAL_ASSET;
-
-  // The slash should travel in the same direction as the hand/flick.
-  // This makes it feel like the cut is launched from the fingertip rather
-  // than simply appearing on top of it.
-  let vx = slashVector?.x ?? 0;
-  let vy = slashVector?.y ?? 0;
-  const vectorLength = Math.hypot(vx, vy);
-
-  if (vectorLength < 0.01) {
-    if (direction === "vertical") {
-      vy = direction === "vertical" ? (demo && Math.random() > 0.5 ? 1 : -1) : 0;
-    } else if (direction === "horizontal") {
-      vx = demo && Math.random() > 0.5 ? 1 : -1;
-    } else {
-      vx = direction === "diagonal-up" ? 1 : 1;
-      vy = direction === "diagonal-up" ? -1 : 1;
-    }
-  }
-
-  const len = Math.hypot(vx, vy) || 1;
-  vx /= len;
-  vy /= len;
-
-  const travelPx = direction === "vertical"
-    ? Math.min(300, Math.max(150, video.clientHeight * 0.30))
-    : Math.min(420, Math.max(180, video.clientWidth * 0.26));
-
-  const startX = pos.x;
-  const startY = pos.y;
-  const endX = startX + (vx * travelPx / Math.max(1, video.clientWidth)) * 100;
-  const endY = startY + (vy * travelPx / Math.max(1, video.clientHeight)) * 100;
+  const src = direction === "vertical" ? VERTICAL_ASSET : HORIZONTAL_ASSET;
 
   const img = document.createElement("img");
-  img.className = "slash";
+  img.className = "slash slash-real";
   img.alt = "";
   img.src = src;
 
-  img.style.left = `${startX}%`;
-  img.style.top = `${startY}%`;
-  img.style.width =
-    direction === "vertical"
-      ? "min(58vh, 850px)"
-      : "min(86vw, 1150px)";
+  img.style.left = `${pos.x}%`;
+  img.style.top = `${pos.y}%`;
+  img.style.width = direction === "vertical"
+    ? "min(62vh, 900px)"
+    : "min(92vw, 1250px)";
 
-  const base = `translate(-50%, -50%) rotate(${angle}deg)`;
+  // For a gesture slash, the hand is the origin and the effect grows OUTWARD.
+  // For demo/domain slashes we keep the centered presentation.
+  let origin = "center center";
+  let translate = "translate(-50%, -50%)";
+  let clipStart = "inset(0 0 0 0)";
+
+  if (hasGestureVector) {
+    const vx = vector.x || 0;
+    const vy = vector.y || 0;
+
+    if (direction === "horizontal" || direction.startsWith("diagonal")) {
+      const towardRight = vx >= 0;
+      origin = towardRight ? "left center" : "right center";
+      translate = towardRight ? "translate(0, -50%)" : "translate(-100%, -50%)";
+      clipStart = towardRight ? "inset(0 100% 0 0)" : "inset(0 0 0 100%)";
+    } else if (direction === "vertical") {
+      const towardDown = vy >= 0;
+      origin = towardDown ? "center top" : "center bottom";
+      translate = towardDown ? "translate(-50%, 0)" : "translate(-50%, -100%)";
+      clipStart = towardDown ? "inset(100% 0 0 0)" : "inset(0 0 100% 0)";
+    }
+  }
+
+  img.style.transformOrigin = origin;
+  img.style.setProperty("--slash-angle", `${angle}deg`);
+  img.style.setProperty("--slash-translate", translate);
+  img.style.setProperty("--slash-clip-start", clipStart);
+  slashLayer.appendChild(img);
+
   let finished = false;
-
   const remove = () => {
     if (finished) return;
     finished = true;
     img.remove();
   };
 
-  const makeFallback = () => {
+  img.onerror = () => {
+    console.warn("Slash image failed to load:", src);
     img.remove();
 
     const fallback = document.createElement("div");
-    fallback.className = "slash-fallback";
-    fallback.style.left = `${startX}%`;
-    fallback.style.top = `${startY}%`;
+    fallback.className = "slash-fallback slash-real";
+    fallback.style.left = `${pos.x}%`;
+    fallback.style.top = `${pos.y}%`;
+    fallback.style.transformOrigin = origin;
 
     if (direction === "vertical") {
-      fallback.style.width = "8px";
-      fallback.style.height = "min(65vh, 850px)";
+      fallback.style.width = "9px";
+      fallback.style.height = "min(70vh, 900px)";
     } else {
-      fallback.style.width = "min(72vw, 900px)";
-      fallback.style.height = "8px";
+      fallback.style.width = "min(78vw, 1000px)";
+      fallback.style.height = "9px";
     }
 
+    fallback.style.setProperty("--slash-angle", `${angle}deg`);
+    fallback.style.setProperty("--slash-translate", translate);
+    fallback.style.setProperty("--slash-clip-start", clipStart);
     slashLayer.appendChild(fallback);
 
     const animation = fallback.animate(
       [
-        {
-          opacity: 0,
-          transform: `${base} translate(${vx * -35}px, ${vy * -35}px) scale(.18)`
-        },
-        {
-          opacity: 1,
-          transform: `${base} translate(${vx * 25}px, ${vy * 25}px) scale(1.04)`
-        },
-        {
-          opacity: 0,
-          transform: `${base} translate(${vx * 150}px, ${vy * 150}px) scale(1.08)`
-        }
+        { opacity: 1, clipPath: clipStart, transform: `${translate} rotate(${angle}deg) scale(.55)` },
+        { opacity: 1, clipPath: "inset(0 0 0 0)", transform: `${translate} rotate(${angle}deg) scale(1.05)` },
+        { opacity: 1, clipPath: "inset(0 0 0 0)", transform: `${translate} rotate(${angle}deg) scale(1.12)` }
       ],
       {
-        duration: demo ? 520 : 240,
-        easing: "cubic-bezier(.08,.72,.18,1)",
+        duration: demo ? 900 : 420,
+        easing: "cubic-bezier(.08,.72,.12,1)",
         fill: "forwards"
       }
     );
 
-    animation.finished.catch(() => {}).finally(() => fallback.remove());
+    animation.finished.catch(() => {}).finally(() => {
+      // Let the slash hang for a short beat instead of fading out.
+      setTimeout(() => fallback.remove(), demo ? 180 : 130);
+    });
   };
-
-  img.onerror = () => {
-    console.warn("Slash image failed to load:", src);
-    makeFallback();
-  };
-
-  slashLayer.appendChild(img);
 
   const animateImage = () => {
     if (finished) return;
@@ -794,34 +773,35 @@ function spawnSlash(direction, point, demo = false, slashVector = null) {
     img.animate(
       [
         {
-          opacity: 0,
-          transform: `${base} translate(${vx * -55}px, ${vy * -55}px) scale(.16, .45)`,
-          filter: "contrast(1.25) blur(3px)"
+          opacity: 1,
+          clipPath: clipStart,
+          transform: `${translate} rotate(${angle}deg) scale(.45)`,
+          filter: "contrast(1.25) blur(1.5px)"
         },
         {
           opacity: 1,
-          transform: `${base} translate(${vx * 10}px, ${vy * 10}px) scale(.72, .92)`,
-          filter: "contrast(1.55) blur(0)"
+          clipPath: "inset(0 0 0 0)",
+          transform: `${translate} rotate(${angle}deg) scale(1.05)`,
+          filter: "contrast(1.5) blur(0)"
         },
         {
           opacity: 1,
-          transform: `${base} translate(${vx * 85}px, ${vy * 85}px) scale(1.08, 1.02)`,
-          filter: "contrast(1.3) blur(0)"
-        },
-        {
-          opacity: 0,
-          transform: `${base} translate(${vx * travelPx}px, ${vy * travelPx}px) scale(1.18, 1.04)`,
-          filter: "contrast(1.1) blur(1px)"
+          clipPath: "inset(0 0 0 0)",
+          transform: `${translate} rotate(${angle}deg) scale(1.12)`,
+          filter: "contrast(1.25) blur(.35px)"
         }
       ],
       {
-        duration: demo ? 700 : 250,
-        easing: "cubic-bezier(.08,.72,.18,1)",
+        duration: demo ? 900 : 420,
+        easing: "cubic-bezier(.08,.72,.12,1)",
         fill: "forwards"
       }
     ).finished
       .catch(() => {})
-      .finally(remove);
+      .finally(() => {
+        // The slash remains solid briefly, then disappears abruptly.
+        setTimeout(remove, demo ? 180 : 130);
+      });
   };
 
   if (img.complete && img.naturalWidth > 0) {
@@ -831,7 +811,7 @@ function spawnSlash(direction, point, demo = false, slashVector = null) {
   }
 }
 
-function triggerSlash(direction, point, demo = false, slashVector = null) {
+function triggerSlash(direction, point, demo = false, vector = null) {
   // Test Slash must always work, regardless of energy.
   if (!demo) {
     if (energy < 8) {
@@ -851,7 +831,7 @@ function triggerSlash(direction, point, demo = false, slashVector = null) {
 
   spawnParticles(impactPoint);
   spawnImpact(impactPoint, direction);
-  spawnSlash(direction, impactPoint, demo, slashVector);
+  spawnSlash(direction, impactPoint, demo, vector);
   lastSlashTime = performance.now();
 }
 
@@ -859,7 +839,7 @@ function processResults(results) {
   const hands = results?.landmarks || [];
 
   if (!hands.length) {
-    if (rctActive) stopRCT("RCT stopped — hand lost");
+    stopRCT("RCT stopped — open palm lost");
     clearTracking();
     setStatus("No hand detected");
     window.__openPalmStart = 0;
@@ -901,7 +881,6 @@ function processResults(results) {
   }
 
   if (domainActive) {
-    setEnergyMode("domain");
     setStatus("DOMAIN EXPANSION — RANDOM SLASHES");
     return;
   }
@@ -927,15 +906,15 @@ function processResults(results) {
   }
 
   if (rctActive) {
-    // RCT is a held gesture: the moment the open-palm gesture disappears,
-    // healing stops instead of continuing until the 4-second timeout.
+    // RCT only exists while the activating one-hand open-palm gesture remains.
+    // The moment the palm closes, points, or a second hand appears, stop it.
     if (!openPalm || twoOpenPalms || pointing || fist) {
-      stopRCT("RCT stopped — open-palm gesture lost");
+      stopRCT("RCT stopped — open palm gesture lost");
+      window.__openPalmStart = 0;
       return;
     }
 
     updateRCTPosition(getPalmCenter(hand));
-    setEnergyMode("rct");
     setStatus(`RCT — REVERSED ENERGY • HP ${Math.round(hp)} • EN ${Math.round(energy)}`);
     return;
   }
@@ -948,7 +927,7 @@ function processResults(results) {
     window.__fistLastTime = now;
 
     energy = Math.min(MAX_ENERGY, energy + dt * 0.024);
-    updateEnergy("recharging");
+    updateEnergy();
 
     setStatus(
       energy >= MAX_ENERGY - 0.1
@@ -962,7 +941,6 @@ function processResults(results) {
   }
 
   window.__fistLastTime = 0;
-  setEnergyMode("normal");
 
   if (!previousTip) {
     previousTip = { ...tip };
@@ -1078,7 +1056,7 @@ demoBtn.addEventListener("click", () => {
 });
 
 window.addEventListener("resize", resizeOverlay);
-updateEnergy("normal");
+updateEnergy();
 updateHP();
 
 
