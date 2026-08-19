@@ -206,3 +206,8 @@ The Dismantle slash remains anchored to the index fingertip during its short str
 - Finger movement controls rotation only.
 - Slash expands from its center and never flies away.
 - 360-degree directions are supported.
+
+
+## v27 Dismantle VFX
+
+Uses the supplied black/white Dismantle VFX sheet. The app crops a clean slash sprite at runtime, centers it on the detected fingertip position at the instant of activation, rotates it to the swipe direction (full 360 degrees), and then leaves the effect fixed while it zaps/fades out. The hand can move afterward without dragging the already-spawned slash.

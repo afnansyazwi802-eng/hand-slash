@@ -56,6 +56,19 @@ const DETECTION_INTERVAL_MS = 50; // ~20 FPS hand inference: still light, but mo
 const COMBO_WINDOW_MS = 1800;
 const MAX_PARTICLES = 18;
 
+// Supplied Dismantle sprite sheet. We crop one clean slash from the sheet
+// at spawn time, then rotate that centered sprite to any 360° direction.
+const dismantleSheet = new Image();
+dismantleSheet.src = "./dismantle-vfx.png?v=27";
+
+const DISMANTLE_SPRITES = [
+  { x: 0, y: 0, w: 1672, h: 315 },   // main long slash
+  { x: 15, y: 300, w: 880, h: 175 }, // medium slash
+  { x: 10, y: 455, w: 730, h: 105 }, // thin slash
+  { x: 850, y: 320, w: 500, h: 380 }, // diagonal slash
+  { x: 55, y: 565, w: 470, h: 370 }   // vertical slash family
+];
+
 function setStatus(text) {
   statusEl.textContent = text;
 }
@@ -658,6 +671,28 @@ function spawnParticles(point) {
   }
 }
 
+function cropDismantleSprite(sprite, targetWidth, targetHeight) {
+  const canvas = document.createElement("canvas");
+  const ratio = Math.min(targetWidth / sprite.w, targetHeight / sprite.h);
+  const w = Math.max(1, Math.round(sprite.w * ratio));
+  const h = Math.max(1, Math.round(sprite.h * ratio));
+
+  canvas.width = w;
+  canvas.height = h;
+  canvas.className = "dismantle-projectile-art";
+
+  const c = canvas.getContext("2d");
+  c.imageSmoothingEnabled = true;
+  c.imageSmoothingQuality = "high";
+  c.drawImage(
+    dismantleSheet,
+    sprite.x, sprite.y, sprite.w, sprite.h,
+    0, 0, w, h
+  );
+
+  return canvas;
+}
+
 function spawnSlash(direction, point, demo = false, vector = null) {
   const videoRect = video.getBoundingClientRect();
   const layerRect = slashLayer.getBoundingClientRect();
@@ -671,18 +706,17 @@ function spawnSlash(direction, point, demo = false, vector = null) {
     angle = (Math.atan2(vector.y, vector.x) * 180 / Math.PI + 360) % 360;
   }
 
-  // The artwork itself is diagonal, so compensate for its built-in angle.
-  const ART_AXIS_DEG = -30;
-  const rotation = angle - ART_AXIS_DEG;
-
+  // The sprite sheet contains slashes whose natural axis is horizontal.
+  // Rotating the CENTER of the crop gives a true 360° slash without the
+  // old corner/tip anchoring problem.
+  const rotation = angle;
   const diagonal = Math.hypot(videoRect.width, videoRect.height);
-  const slashWidth = Math.max(280, Math.min(520, diagonal * 0.38));
-  const slashHeight = slashWidth * (869 / 1515);
+  const slashWidth = Math.max(300, Math.min(650, diagonal * 0.48));
+  const slashHeight = slashWidth * 0.30;
 
-  const startX = launch.x + videoRect.left - layerRect.left;
-  const startY = launch.y + videoRect.top - layerRect.top;
+  const startX = Math.max(0, Math.min(layerRect.width, launch.x + videoRect.left - layerRect.left));
+  const startY = Math.max(0, Math.min(layerRect.height, launch.y + videoRect.top - layerRect.top));
 
-  // Never leave old normal slashes behind. There is one live Dismantle only.
   if (!demo && activeDismantle?.element) {
     activeDismantle.element.remove();
     activeDismantle = null;
@@ -696,28 +730,31 @@ function spawnSlash(direction, point, demo = false, vector = null) {
   projectile.style.height = `${slashHeight}px`;
   projectile.style.setProperty("--slash-rotation", `${rotation}deg`);
 
-  const slash = document.createElement("img");
-  slash.src = `./dismantle-vfx.png?v=26`;
-  slash.alt = "";
-  slash.draggable = false;
-  slash.className = "dismantle-projectile-art";
-  slash.width = Math.round(slashWidth);
-  slash.height = Math.round(slashHeight);
+  const sprite = DISMANTLE_SPRITES[Math.floor(Math.random() * DISMANTLE_SPRITES.length)];
+  const art = dismantleSheet.complete && dismantleSheet.naturalWidth
+    ? cropDismantleSprite(sprite, slashWidth, slashHeight)
+    : document.createElement("div");
 
-  projectile.appendChild(slash);
+  if (art.tagName === "DIV") {
+    art.className = "slash-fallback";
+    art.style.left = "0";
+    art.style.top = "50%";
+    art.style.width = "100%";
+    art.style.height = "4px";
+  }
+
+  projectile.appendChild(art);
   slashLayer.appendChild(projectile);
 
-  const duration = demo ? 520 : 360;
+  const duration = demo ? 560 : 430;
   const start = performance.now();
-
   const active = {
     element: projectile,
     x: startX,
     y: startY,
     angle,
     rotation,
-    vector: vector ? { ...vector } : { x: 1, y: 0 },
-    artAxisDeg: ART_AXIS_DEG
+    vector: vector ? { ...vector } : { x: 1, y: 0 }
   };
 
   if (!demo) activeDismantle = active;
@@ -728,22 +765,20 @@ function spawnSlash(direction, point, demo = false, vector = null) {
     const elapsed = now - start;
     const t = Math.min(1, elapsed / duration);
 
-    // Quick manifestation: small -> full size, then a short hold/fade.
-    const growT = Math.min(1, t / 0.11);
-    const grow = 0.06 + growT * 0.94;
-
+    // Natural "zap": a very fast appearance, a short visible hold, then fade.
+    const growT = Math.min(1, t / 0.10);
+    const grow = 0.12 + growT * 0.88;
     let opacity = 1;
-    if (t < 0.025) opacity = t / 0.025;
-    else if (t > 0.78) opacity = 1 - ((t - 0.78) / 0.22);
+    if (t < 0.035) opacity = t / 0.035;
+    else if (t > 0.76) opacity = 1 - ((t - 0.76) / 0.24);
 
-    // Position is a snapshot: once spawned, the slash stays fixed in place.
+    // FIXED SPAWN: the slash never reads the live hand position after spawn.
     projectile.style.transform =
-      `translate3d(-50%, -50%, 0) rotate(var(--slash-rotation, 0deg)) scaleX(${grow})`;
+      `translate3d(-50%, -50%, 0) rotate(${rotation}deg) scale(${grow})`;
     projectile.style.opacity = opacity.toFixed(3);
 
-    if (t < 1) {
-      requestAnimationFrame(animateSlash);
-    } else {
+    if (t < 1) requestAnimationFrame(animateSlash);
+    else {
       if (activeDismantle?.element === projectile) activeDismantle = null;
       projectile.remove();
     }
@@ -751,17 +786,15 @@ function spawnSlash(direction, point, demo = false, vector = null) {
 
   requestAnimationFrame(animateSlash);
 
-  const fragmentCount = demo ? 3 : 1;
+  // Tiny center impact accents only — no extra arrow/curve is added.
+  const fragmentCount = demo ? 2 : 1;
   for (let i = 0; i < fragmentCount; i++) {
     const fragment = document.createElement("span");
     fragment.className = "slash-fragment slash-fragment-v19";
     fragment.style.left = `${startX}px`;
     fragment.style.top = `${startY}px`;
-    fragment.style.setProperty(
-      "--fragment-angle",
-      `${angle + (Math.random() - 0.5) * 7}deg`
-    );
-    fragment.style.setProperty("--fragment-distance", `${12 + Math.random() * 28}px`);
+    fragment.style.setProperty("--fragment-angle", `${angle + (Math.random() - 0.5) * 6}deg`);
+    fragment.style.setProperty("--fragment-distance", `${8 + Math.random() * 18}px`);
     fragment.style.setProperty("--fragment-delay", `${i * 18}ms`);
     slashLayer.appendChild(fragment);
     setTimeout(() => fragment.remove(), 180);
