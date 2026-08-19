@@ -22,6 +22,8 @@ let rctActive=false,domainActive=false;
 let cameraRunning=false,processing=false,handsReady=false;
 let audioCtx=null;
 let domainEnd=0,nextDomainSlash=0;
+let slashThreshold=62;
+const slashCooldown=420;
 
 function resize(){
   W=innerWidth; H=innerHeight; dpr=Math.min(devicePixelRatio||1,2);
@@ -95,7 +97,7 @@ function clampSlashPosition(x,y,width,height,angle){
 function addSlash(x,y,a,opts={}){
   const now=performance.now();
   const cost=opts.domain?0:12;
-  if(!opts.domain && (energy<cost || now-lastSlashTime<240)) return false;
+  if(!opts.domain && (energy<cost || now-lastSlashTime<slashCooldown)) return false;
   if(!opts.domain){energy-=cost;combo++;lastSlashTime=now;updateHud()}
   const aspect=(slashImage.naturalWidth||2048)/(slashImage.naturalHeight||700);
   const width=opts.domain ? Math.min(W*.36,600) : Math.min(W*.44,760);
@@ -245,13 +247,16 @@ function onResults(res){
   const palm=palmCenter(lm);
   previousIndex=idx;previousPalm=palm;
 
-  // Dismantle: only a clear index-pointing pose. The slash is spawned at
-  // the current point and then remains fixed in that position.
+  // Dismantle: require a deliberate finger stroke before firing.
+  // The slash is spawned at the stroke position and stays fixed there.
+  // A larger threshold + cooldown prevents tiny hand jitter from producing
+  // a burst of accidental slashes.
   if(s.point && !domainActive){
     fistSince=openSince=0;
     if(!pointStarted)pointStarted={...idx};
     const dx=idx.x-pointStarted.x,dy=idx.y-pointStarted.y;
-    if(Math.hypot(dx,dy)>25 && now-lastSlashTime>240){
+    const travel=Math.hypot(dx,dy);
+    if(travel>=slashThreshold && now-lastSlashTime>=slashCooldown){
       spawnSlash(idx.x,idx.y,Math.atan2(dy,dx));
       pointStarted={...idx};
     }
@@ -300,6 +305,17 @@ async function startCamera(){
     video.srcObject=stream;await video.play();cameraRunning=true;
     statusEl.textContent='2-hand tracking ON — Point/Move: Slash • Fist: Recharge • Open Palm: RCT • 2 Hands: Domain';
   }catch(e){console.error(e);statusEl.textContent='Camera or hand tracking failed. Allow camera permission and refresh.'}
+}
+
+const sensitivityEl=document.getElementById('sensitivity');
+const sensitivityValueEl=document.getElementById('sensitivityValue');
+if(sensitivityEl){
+  const syncSensitivity=()=>{
+    slashThreshold=Number(sensitivityEl.value);
+    if(sensitivityValueEl) sensitivityValueEl.textContent=`${slashThreshold}px`;
+  };
+  sensitivityEl.addEventListener('input',syncSensitivity);
+  syncSensitivity();
 }
 
 document.getElementById('start').onclick=startCamera;

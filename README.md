@@ -15,3 +15,10 @@ Two hands held for about 0.5 seconds activate Domain Expansion. It lasts 5 secon
 - `style.css`
 - `dismantle-vfx.png`
 - `favicon.svg`
+
+
+### v34 changes
+- Lower default Dismantle sensitivity (62px travel threshold).
+- 420ms slash cooldown to reduce accidental repeated slashes.
+- Added an adjustable Slash Sensitivity slider.
+- Made Domain Expansion aura/title more visible while keeping the effect lightweight.

@@ -93,3 +93,66 @@
   55% { opacity: 1; transform: scaleX(.92) scaleY(1.05); filter: blur(0); }
   100% { opacity: 1; transform: scaleX(.92) scaleY(1); }
 }
+
+
+/* v34: clearer Domain Expansion atmosphere */
+.domain-overlay {
+  background:
+    radial-gradient(circle at 50% 50%,
+      rgba(48, 26, 62, .46) 0%,
+      rgba(14, 8, 20, .74) 42%,
+      rgba(0, 0, 0, .92) 100%);
+}
+.domain-overlay.active {
+  animation: domainFadeIn .22s ease-out both;
+}
+.domain-aura {
+  width: 150vmax;
+  height: 150vmax;
+  background:
+    radial-gradient(circle,
+      rgba(96, 62, 115, .22) 0%,
+      rgba(45, 23, 58, .26) 27%,
+      rgba(16, 8, 22, .22) 52%,
+      transparent 72%);
+  filter: blur(10px);
+}
+.domain-aura::before {
+  inset: 9%;
+  border: 2px solid rgba(190, 150, 210, .18);
+  box-shadow:
+    0 0 90px rgba(90, 40, 110, .28),
+    0 0 180px rgba(35, 15, 45, .22),
+    inset 0 0 110px rgba(0, 0, 0, .45);
+}
+.domain-aura::after {
+  inset: 24%;
+  border: 2px solid rgba(230, 210, 240, .11);
+  box-shadow: 0 0 55px rgba(180, 130, 205, .12);
+}
+.domain-title {
+  color: #fff;
+  text-shadow:
+    0 0 4px rgba(255,255,255,1),
+    0 0 24px rgba(220,190,235,.58),
+    0 0 70px rgba(100,50,120,.28),
+    0 10px 34px rgba(0,0,0,.95);
+}
+.domain-subtitle {
+  color: rgba(245,235,250,.78);
+}
+
+.sensitivity-label {
+  margin-top: 16px;
+}
+.sensitivity-label span {
+  float: right;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+#sensitivity {
+  display: block;
+  width: 100%;
+  margin-top: 9px;
+  accent-color: #fff;
+}
