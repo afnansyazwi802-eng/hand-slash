@@ -22,3 +22,11 @@ Two hands held for about 0.5 seconds activate Domain Expansion. It lasts 5 secon
 - 420ms slash cooldown to reduce accidental repeated slashes.
 - Added an adjustable Slash Sensitivity slider.
 - Made Domain Expansion aura/title more visible while keeping the effect lightweight.
+
+
+## v35 fixes
+- Full two-hand MediaPipe tracking is retained.
+- Dismantle takes a fixed snapshot of the fingertip position and direction, so the slash stays where it spawned.
+- Higher default swipe threshold (75px) and 450ms cooldown reduce accidental slashes.
+- Domain has priority over RCT, lasts 5 seconds, and has a visible dark aura/title overlay.
+- RCT follows the palm only while active and stops when the open-palm gesture disappears.

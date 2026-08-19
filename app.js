@@ -1,358 +1,614 @@
-const video=document.getElementById('camera');
-const canvas=document.getElementById('overlay');
-const ctx=canvas.getContext('2d');
-const panel=document.getElementById('panel');
-const statusEl=document.getElementById('status');
-const comboEl=document.getElementById('combo');
-const energyEl=document.getElementById('energy');
-const hpEl=document.getElementById('hp');
-const handCountEl=document.getElementById('handCount');
+import {
+  FilesetResolver,
+  HandLandmarker
+} from "https://unpkg.com/@mediapipe/tasks-vision@0.10.35/vision_bundle.mjs";
 
-const slashImage=new Image();
-slashImage.src='dismantle-vfx.png';
+const MODEL_URL =
+  "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+const WASM_URL =
+  "https://unpkg.com/@mediapipe/tasks-vision@0.10.35/wasm";
 
-let W=innerWidth,H=innerHeight,dpr=1;
-let combo=0,energy=300,hp=100;
-let slashes=[];
-let lastHands=[];
-let previousIndex=null,previousPalm=null,pointStarted=null;
-let lastSlashTime=0,fistSince=0,openSince=0,domainSince=0;
-let rctActive=false,domainActive=false;
-    window.setDomainOverlay?.(false);
-let cameraRunning=false,processing=false,handsReady=false;
-let audioCtx=null;
-let domainEnd=0,nextDomainSlash=0;
-let slashThreshold=62;
-const slashCooldown=420;
+const video = document.querySelector("#camera");
+const overlay = document.querySelector("#handOverlay");
+const overlayCtx = overlay?.getContext("2d");
+const slashLayer = document.querySelector("#slashLayer");
+const domainFx = document.querySelector("#domainFx");
+const rctFx = document.querySelector("#rctFx");
+const startBtn = document.querySelector("#start");
+const testSlashBtn = document.querySelector("#test");
+const hideBtn = document.querySelector("#hide");
+const statusEl = document.querySelector("#status");
+const comboEl = document.querySelector("#combo");
+const hpBar = document.querySelector("#hpBar");
+const hpText = document.querySelector("#hpText");
+const energyBar = document.querySelector("#energyBar");
+const energyText = document.querySelector("#energyText");
+const handsText = document.querySelector("#handsText");
+const sensitivity = document.querySelector("#sensitivity");
+const sensitivityValue = document.querySelector("#sensitivityValue");
 
-function resize(){
-  W=innerWidth; H=innerHeight; dpr=Math.min(devicePixelRatio||1,2);
-  canvas.width=W*dpr; canvas.height=H*dpr;
-  canvas.style.width=W+'px'; canvas.style.height=H+'px';
-  ctx.setTransform(dpr,0,0,dpr,0,0);
+const slashImage = new Image();
+slashImage.src = "./dismantle-vfx.png";
+
+let detector = null;
+let stream = null;
+let running = false;
+let lastVideoTime = -1;
+let lastDetectTime = 0;
+
+let hp = 70;
+const MAX_HP = 100;
+let energy = 300;
+const MAX_ENERGY = 300;
+
+let combo = 0;
+let comboExpires = 0;
+
+let previousIndex = null;
+let previousTime = 0;
+let pointStart = null;
+let gestureArmed = true;
+
+let rctActive = false;
+let rctStart = 0;
+let domainActive = false;
+let domainStart = 0;
+let domainTimer = 0;
+let openPalmStart = 0;
+let twoHandStart = 0;
+let fistLast = 0;
+
+let lastSlashTime = 0;
+const SLASH_COOLDOWN = 450;
+let slashThreshold = 75;
+
+const slashStates = [];
+
+const connections = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],
+  [13,17],[17,18],[18,19],[19,20],
+  [0,17]
+];
+
+function status(text) {
+  if (statusEl) statusEl.textContent = text;
 }
-addEventListener('resize',resize); resize();
 
-function updateHud(){
-  comboEl.textContent=combo;
-  energyEl.style.width=`${Math.max(0,Math.min(300,energy))/3}%`;
-  hpEl.style.width=`${Math.max(0,Math.min(100,hp))}%`;
-  handCountEl.textContent=lastHands.length;
-}
-updateHud();
-
-function beep(freq=180,d=.12){
-  try{
-    audioCtx ||= new (window.AudioContext||window.webkitAudioContext)();
-    const o=audioCtx.createOscillator(),g=audioCtx.createGain();
-    o.type='sawtooth'; o.frequency.value=freq;
-    g.gain.setValueAtTime(.035,audioCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+d);
-    o.connect(g).connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+d);
-  }catch{}
+function updateHud() {
+  if (comboEl) comboEl.textContent = combo;
+  if (hpBar) hpBar.style.width = `${hp / MAX_HP * 100}%`;
+  if (hpText) hpText.textContent = `${Math.round(hp)} / ${MAX_HP}`;
+  if (energyBar) energyBar.style.width = `${energy / MAX_ENERGY * 100}%`;
+  if (energyText) energyText.textContent = `${Math.round(energy)} / ${MAX_ENERGY}`;
 }
 
-function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
-function screenPoint(lm){
-  const vw=video.videoWidth||1280,vh=video.videoHeight||720;
-  const scale=Math.max(W/vw,H/vh),dw=vw*scale,dh=vh*scale;
-  const ox=(W-dw)/2,oy=(H-dh)/2;
-  return {x:ox+(1-lm.x)*dw,y:oy+lm.y*dh};
+function resizeOverlay() {
+  if (!overlay || !overlayCtx) return;
+  const rect = video.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  overlay.width = Math.max(1, Math.round(rect.width * dpr));
+  overlay.height = Math.max(1, Math.round(rect.height * dpr));
+  overlayCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
-// Finger extension is based on tip-vs-PIP distance from the wrist.
-// This is much more stable for open-palm / fist detection than the old test.
-function fingerExtended(lm,tip,pip){
-  return dist(lm[tip],lm[0]) > dist(lm[pip],lm[0])*1.16 &&
-         dist(lm[tip],lm[pip]) > dist(lm[pip],lm[tip===8?5:tip===12?9:tip===16?13:17])*0.55;
-}
-function handState(lm){
-  const index=fingerExtended(lm,8,6);
-  const middle=fingerExtended(lm,12,10);
-  const ring=fingerExtended(lm,16,14);
-  const pinky=fingerExtended(lm,20,18);
-  const long=[index,middle,ring,pinky];
-  const count=long.filter(Boolean).length;
+function videoToScreen(p) {
+  const rect = video.getBoundingClientRect();
+  const vw = video.videoWidth || 640;
+  const vh = video.videoHeight || 480;
+  const scale = Math.max(rect.width / vw, rect.height / vh);
+  const shownW = vw * scale;
+  const shownH = vh * scale;
+  const cropX = (shownW - rect.width) / 2;
+  const cropY = (shownH - rect.height) / 2;
   return {
-    index,middle,ring,pinky,count,
-    point:index && count===1,
-    open:count>=3,
-    fist:count<=1
+    x: (1 - p.x) * shownW - cropX,
+    y: p.y * shownH - cropY
   };
 }
 
-function palmCenter(lm){
-  const ids=[0,5,9,13,17];
-  let x=0,y=0;
-  for(const i of ids){const p=screenPoint(lm[i]);x+=p.x;y+=p.y}
-  return {x:x/ids.length,y:y/ids.length};
-}
+function drawHands(allHands) {
+  if (!overlayCtx) return;
+  const rect = video.getBoundingClientRect();
+  overlayCtx.clearRect(0, 0, rect.width, rect.height);
 
-function clampSlashPosition(x,y,width,height,angle){
-  // Keep the visual center safely inside the viewport even after rotation.
-  const r=Math.hypot(width,height)/2;
-  return {x:Math.max(r,Math.min(W-r,x)),y:Math.max(r,Math.min(H-r,y))};
-}
+  for (const hand of allHands) {
+    const pts = hand.map(videoToScreen);
 
-function addSlash(x,y,a,opts={}){
-  const now=performance.now();
-  const cost=opts.domain?0:12;
-  if(!opts.domain && (energy<cost || now-lastSlashTime<slashCooldown)) return false;
-  if(!opts.domain){energy-=cost;combo++;lastSlashTime=now;updateHud()}
-  const aspect=(slashImage.naturalWidth||2048)/(slashImage.naturalHeight||700);
-  const width=opts.domain ? Math.min(W*.36,600) : Math.min(W*.44,760);
-  const height=width/aspect;
-  const pos=clampSlashPosition(x,y,width,height,a);
-  slashes.push({x:pos.x,y:pos.y,a,born:now,life:opts.domain?360:440,width,height,domain:!!opts.domain});
-  if(!opts.domain) beep(190,.1); else beep(130+Math.random()*70,.055);
-  return true;
-}
+    overlayCtx.strokeStyle = "rgba(255,255,255,.46)";
+    overlayCtx.lineWidth = 1.5;
+    overlayCtx.beginPath();
+    for (const [a,b] of connections) {
+      overlayCtx.moveTo(pts[a].x, pts[a].y);
+      overlayCtx.lineTo(pts[b].x, pts[b].y);
+    }
+    overlayCtx.stroke();
 
-function spawnSlash(x,y,a){addSlash(x,y,a)}
+    overlayCtx.fillStyle = "rgba(255,255,255,.9)";
+    for (let i=0;i<pts.length;i++) {
+      const r = i === 8 ? 5 : 3;
+      overlayCtx.beginPath();
+      overlayCtx.arc(pts[i].x, pts[i].y, r, 0, Math.PI*2);
+      overlayCtx.fill();
+    }
 
-function triggerDomain(){
-  if(domainActive || energy<45) return;
-  // Domain and RCT are mutually exclusive.
-  rctActive=false;
-  openSince=0;
-  domainActive=true;
-    window.setDomainOverlay?.(true); domainEnd=performance.now()+5000; nextDomainSlash=0;
-  energy-=45; updateHud(); beep(70,.4);
-  statusEl.textContent='DOMAIN EXPANSION — random Dismantle slashes for 5 seconds';
-}
-
-function domainTick(now){
-  if(!domainActive) return;
-  if(now>=domainEnd){domainActive=false;statusEl.textContent='2-hand tracking ON — Point/Move: Slash • Fist: Recharge • Open Palm: RCT • 2 Hands: Domain';return}
-  if(now>=nextDomainSlash){
-    const margin=Math.min(W,H)*.20;
-    const x=margin+Math.random()*(W-margin*2);
-    const y=margin+Math.random()*(H-margin*2);
-    const a=Math.random()*Math.PI*2;
-    addSlash(x,y,a,{domain:true});
-    nextDomainSlash=now+120+Math.random()*180;
+    const palm = pts[9];
+    overlayCtx.beginPath();
+    overlayCtx.arc(palm.x, palm.y, 9, 0, Math.PI*2);
+    overlayCtx.strokeStyle = "rgba(255,255,255,.75)";
+    overlayCtx.lineWidth = 2;
+    overlayCtx.stroke();
   }
 }
 
-function drawHand(lm,now){
-  // Full-hand landmark/skeleton visualization, not just a single fingertip dot.
-  const chains=[[0,1,2,3,4],[0,5,6,7,8],[0,9,10,11,12],[0,13,14,15,16],[0,17,18,19,20],[5,9,13,17]];
-  ctx.save();
-  ctx.lineWidth=2;
-  ctx.strokeStyle='rgba(255,255,255,.72)';
-  ctx.fillStyle='rgba(255,255,255,.9)';
-  for(const chain of chains){
-    ctx.beginPath();
-    chain.forEach((id,i)=>{const p=screenPoint(lm[id]);i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)});
-    ctx.stroke();
-  }
-  for(let i=0;i<lm.length;i++){
-    const p=screenPoint(lm[i]);
-    ctx.beginPath();ctx.arc(p.x,p.y,i===8?5:3,0,Math.PI*2);ctx.fill();
-  }
-  ctx.restore();
+function angle(a,b,c) {
+  const abx=a.x-b.x, aby=a.y-b.y;
+  const cbx=c.x-b.x, cby=c.y-b.y;
+  const mag=Math.hypot(abx,aby)*Math.hypot(cbx,cby);
+  if (!mag) return 180;
+  const dot=(abx*cbx+aby*cby)/mag;
+  return Math.acos(Math.max(-1,Math.min(1,dot))) * 180/Math.PI;
 }
 
-function drawSlash(s,now){
-  const age=now-s.born;if(age>=s.life)return false;
-  const enter=Math.min(1,age/42);
-  const hold=Math.min(1,Math.max(0,(age-70)/180));
-  const fade=Math.min(1,(s.life-age)/90);
-  const scale=.92+.08*enter;
-  ctx.save();
-  ctx.translate(s.x,s.y);ctx.rotate(s.a);
-  ctx.globalAlpha=enter*fade;
-  ctx.globalCompositeOperation='screen';
-  ctx.drawImage(slashImage,-s.width*scale/2,-s.height*scale/2,s.width*scale,s.height*scale);
-  ctx.restore();
-  return true;
+function fingerExtended(h, mcp,pip,dip,tip) {
+  const wrist=h[0];
+  const pipD=Math.hypot(h[pip].x-wrist.x,h[pip].y-wrist.y);
+  const tipD=Math.hypot(h[tip].x-wrist.x,h[tip].y-wrist.y);
+  return tipD > pipD * 1.08 && angle(h[mcp],h[pip],h[tip]) > 135;
 }
 
-function render(now){
-  ctx.clearRect(0,0,W,H);
-  domainTick(now);
-  slashes=slashes.filter(s=>drawSlash(s,now));
-  if(domainActive){
-    const left=Math.max(0,domainEnd-now);
-    ctx.fillStyle='rgba(255,255,255,.025)';ctx.fillRect(0,0,W,H);
-    ctx.strokeStyle='rgba(255,255,255,.38)';ctx.lineWidth=2;
-    ctx.beginPath();ctx.arc(W/2,H/2,Math.min(W,H)*.38,0,Math.PI*2);ctx.stroke();
-    ctx.fillStyle='rgba(255,255,255,.8)';ctx.font='700 14px system-ui';ctx.textAlign='center';
-    ctx.fillText(`DOMAIN ${Math.ceil(left/1000)}s`,W/2,Math.min(H*.9,70));
-  }
-  if(rctActive&&previousPalm){
-    const p=previousPalm;
-    const pulse=1+Math.sin(now/80)*.12;
-    const g=ctx.createRadialGradient(p.x,p.y,5,p.x,p.y,90*pulse);
-    g.addColorStop(0,'rgba(255,255,255,.95)');
-    g.addColorStop(.3,'rgba(230,245,255,.38)');
-    g.addColorStop(.65,'rgba(255,255,255,.12)');
-    g.addColorStop(1,'rgba(255,255,255,0)');
-    ctx.fillStyle=g;ctx.beginPath();ctx.arc(p.x,p.y,90*pulse,0,Math.PI*2);ctx.fill();
-    ctx.strokeStyle='rgba(255,255,255,.72)';ctx.lineWidth=2;
-    ctx.beginPath();ctx.arc(p.x,p.y,42+Math.sin(now/90)*6,0,Math.PI*2);ctx.stroke();
-    ctx.beginPath();ctx.arc(p.x,p.y,62+Math.sin(now/120)*7,0,Math.PI*2);ctx.stroke();
-  }
-  if(previousIndex&&!rctActive){ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(previousIndex.x,previousIndex.y,4,0,Math.PI*2);ctx.fill()}
-  requestAnimationFrame(render);
+function fingerBent(h, mcp,pip,dip,tip) {
+  const wrist=h[0];
+  const pipD=Math.hypot(h[pip].x-wrist.x,h[pip].y-wrist.y);
+  const tipD=Math.hypot(h[tip].x-wrist.x,h[tip].y-wrist.y);
+  return tipD < pipD * 1.22;
 }
-requestAnimationFrame(render);
 
-function onResults(res){
-  const now=performance.now();
-  lastHands=res.multiHandLandmarks||[];
+function isPointing(h) {
+  return fingerExtended(h,5,6,7,8) &&
+         fingerBent(h,9,10,11,12) &&
+         fingerBent(h,13,14,15,16) &&
+         fingerBent(h,17,18,19,20);
+}
+
+function isFist(h) {
+  return fingerBent(h,5,6,7,8) &&
+         fingerBent(h,9,10,11,12) &&
+         fingerBent(h,13,14,15,16) &&
+         fingerBent(h,17,18,19,20);
+}
+
+function isOpenPalm(h) {
+  return fingerExtended(h,5,6,7,8) &&
+         fingerExtended(h,9,10,11,12) &&
+         fingerExtended(h,13,14,15,16) &&
+         fingerExtended(h,17,18,19,20);
+}
+
+/*
+  This is the key fix:
+  the slash takes a SNAPSHOT of the finger position at activation.
+  Nothing updates its x/y afterward.
+*/
+function spawnSlash(x,y,angle, fromDomain=false) {
+  if (slashStates.length >= (fromDomain ? 5 : 1)) return;
+  if (!fromDomain && performance.now()-lastSlashTime < SLASH_COOLDOWN) return;
+
+  if (!fromDomain) {
+    if (energy < 12) {
+      status("Not enough Energy");
+      return;
+    }
+    energy -= 12;
+    combo += 1;
+    comboExpires = performance.now() + 1800;
+    lastSlashTime = performance.now();
+    updateHud();
+  }
+
+  const s = {
+    x, y, angle,
+    born: performance.now(),
+    life: 500,
+    width: Math.min(innerWidth * 0.66, 960)
+  };
+
+  slashStates.push(s);
+}
+
+function drawSlashes(now) {
+  if (!slashImage.complete || !slashImage.naturalWidth) return;
+
+  for (let i=slashStates.length-1;i>=0;i--) {
+    const s=slashStates[i];
+    const age=now-s.born;
+    if (age>=s.life) {
+      slashStates.splice(i,1);
+      continue;
+    }
+
+    const inT=Math.min(age/75,1);
+    const outT=Math.min((s.life-age)/120,1);
+    const alpha=inT*outT;
+    const width=s.width * (0.72 + 0.28*Math.min(age/110,1));
+    const aspect=slashImage.naturalWidth/slashImage.naturalHeight;
+    const height=width/aspect;
+
+    ctxSave();
+  }
+
+  function ctxSave() {
+    // no-op: actual draw is performed below after layer compositing is
+    // centralized, preserving the fixed spawn coordinates.
+  }
+}
+
+function renderSlashes(now) {
+  if (!slashLayer) return;
+
+  // Clear previous image nodes that belong to completed effects.
+  for (const child of [...slashLayer.children]) {
+    if (child.dataset.dismantle === "true" && !child.isConnected) continue;
+  }
+
+  // Render each slash as an absolute image. Its position is fixed at spawn.
+  const activeIds = new Set();
+  slashStates.forEach((s, idx) => {
+    const id = `dismantle-${idx}-${s.born}`;
+    activeIds.add(id);
+    let img = slashLayer.querySelector(`[data-slash-id="${CSS.escape(id)}"]`);
+    if (!img) {
+      img = document.createElement("img");
+      img.className = "dismantle-instance";
+      img.dataset.slashId = id;
+      img.src = slashImage.src;
+      slashLayer.appendChild(img);
+    }
+
+    const age = now - s.born;
+    const inT = Math.min(age/75,1);
+    const outT = Math.min((s.life-age)/120,1);
+    const alpha = inT*outT;
+    const width = s.width * (0.72 + 0.28*Math.min(age/110,1));
+    const posX = s.x;
+    const posY = s.y;
+
+    // Rotation/position are NEVER changed after the slash is spawned.
+    img.style.left = `${posX}px`;
+    img.style.top = `${posY}px`;
+    img.style.width = `${width}px`;
+    img.style.opacity = `${alpha}`;
+    img.style.transform = `translate(-50%, -50%) rotate(${s.angle}rad)`;
+  });
+
+  for (const img of [...slashLayer.querySelectorAll("[data-slash-id]")]) {
+    if (!activeIds.has(img.dataset.slashId)) img.remove();
+  }
+}
+
+function randomDomainSlash() {
+  if (!domainActive) return;
+  const margin = Math.min(innerWidth,innerHeight)*0.14;
+  const x = margin + Math.random()*(innerWidth-margin*2);
+  const y = margin + Math.random()*(innerHeight-margin*2);
+  const a = Math.random()*Math.PI*2;
+  spawnSlash(x,y,a,true);
+}
+
+function setDomain(active) {
+  domainActive = active;
+  if (domainFx) {
+    domainFx.classList.toggle("active", active);
+  }
+}
+
+function startDomain() {
+  if (domainActive || rctActive) return;
+  if (energy < 90) {
+    status("Not enough Energy for Domain");
+    return;
+  }
+
+  energy -= 90;
   updateHud();
-  if(!lastHands.length){
-    previousIndex=null;previousPalm=null;pointStarted=null;
-    fistSince=openSince=domainSince=0;rctActive=false;return;
-  }
 
-  // Two-hand mode has priority over every single-hand skill.
-  // This prevents an open palm on either hand from activating RCT while
-  // the player is forming Domain Expansion.
-  if(lastHands.length>=2){
-    rctActive=false;
-    openSince=0;
-    fistSince=0;
-    pointStarted=null;
-    previousIndex=null;
+  domainActive = true;
+  domainStart = performance.now();
+  setDomain(true);
+  status("DOMAIN EXPANSION");
 
-    if(!domainSince)domainSince=now;
-    if(now-domainSince>500)triggerDomain();
+  clearInterval(domainTimer);
+  randomDomainSlash();
+  domainTimer = setInterval(() => {
+    if (!domainActive) return;
+    randomDomainSlash();
+  }, 360);
+}
 
-    // While two hands are visible, never run the one-hand RCT/Dismantle
-    // gesture logic below. Domain owns the input until one hand remains.
-    if(domainActive) previousPalm=null;
-    return;
-  }else{
-    domainSince=0;
-  }
+function stopDomain() {
+  if (!domainActive) return;
+  domainActive = false;
+  clearInterval(domainTimer);
+  domainTimer = 0;
+  setDomain(false);
+}
 
-  // Domain owns the input while active. A single hand appearing during the
-  // 5-second Domain window must not restart RCT or Dismantle.
-  if(domainActive){
-    rctActive=false;
-    openSince=0;
-    fistSince=0;
-    pointStarted=null;
-    previousIndex=null;
-    previousPalm=null;
+function startRCT(anchor) {
+  if (rctActive || domainActive) return;
+  if (energy < 40) {
+    status("Not enough Energy for RCT");
     return;
   }
 
-  // Prefer the first detected hand for single-hand skills.
-  const lm=lastHands[0];
-  const s=handState(lm);
-  const idx=screenPoint(lm[8]);
-  const palm=palmCenter(lm);
-  previousIndex=idx;previousPalm=palm;
+  rctActive = true;
+  rctStart = performance.now();
+  openPalmStart = performance.now();
 
-  // Dismantle: require a deliberate finger stroke before firing.
-  // The slash is spawned at the stroke position and stays fixed there.
-  // A larger threshold + cooldown prevents tiny hand jitter from producing
-  // a burst of accidental slashes.
-  if(s.point && !domainActive){
-    fistSince=openSince=0;
-    if(!pointStarted)pointStarted={...idx};
-    const dx=idx.x-pointStarted.x,dy=idx.y-pointStarted.y;
+  if (rctFx) {
+    rctFx.classList.add("active");
+    rctFx.style.left = `${anchor.x}px`;
+    rctFx.style.top = `${anchor.y}px`;
+  }
+  status("RCT — REVERSED ENERGY");
+}
+
+function stopRCT() {
+  if (!rctActive) return;
+  rctActive = false;
+  if (rctFx) rctFx.classList.remove("active");
+}
+
+function updateRCT(now, anchor) {
+  if (!rctActive) return;
+  if (!anchor) {
+    stopRCT();
+    return;
+  }
+
+  const dt = Math.min(80, now - (window.__rctLast || now));
+  window.__rctLast = now;
+
+  energy = Math.max(0, energy - dt * 0.035);
+  hp = Math.min(MAX_HP, hp + dt * 0.024);
+  updateHud();
+
+  if (rctFx) {
+    // RCT follows the palm ONLY while RCT is active.
+    rctFx.style.left = `${anchor.x}px`;
+    rctFx.style.top = `${anchor.y}px`;
+  }
+
+  if (energy <= 0 || now-rctStart >= 4000) {
+    stopRCT();
+    window.__rctLast = 0;
+  }
+}
+
+function processResults(results) {
+  const hands = results?.landmarks || [];
+  if (handsText) handsText.textContent = `HANDS ${hands.length}`;
+
+  if (!hands.length) {
+    drawHands([]);
+    previousIndex = null;
+    pointStart = null;
+    openPalmStart = 0;
+    twoHandStart = 0;
+    fistLast = 0;
+    stopRCT();
+    if (!domainActive) status("No hand detected");
+    return;
+  }
+
+  drawHands(hands);
+
+  const now = performance.now();
+  const twoHands = hands.length >= 2;
+  const first = hands[0];
+  const idx = videoToScreen(first[8]);
+  const palm = videoToScreen(first[9]);
+
+  // TWO HANDS ALWAYS HAVE PRIORITY.
+  if (twoHands) {
+    stopRCT();
+    openPalmStart = 0;
+    fistLast = 0;
+    previousIndex = null;
+    pointStart = null;
+
+    if (!twoHandStart) twoHandStart = now;
+    const held = now-twoHandStart;
+
+    if (!domainActive) {
+      status(`👐 DOMAIN ${Math.min(100,Math.round(held/550*100))}%`);
+      if (held >= 550) {
+        startDomain();
+        twoHandStart = 0;
+      }
+    } else {
+      status("DOMAIN EXPANSION");
+    }
+    return;
+  }
+
+  // One hand from here onward.
+  twoHandStart = 0;
+
+  if (domainActive) {
+    stopDomain();
+  }
+
+  const fist = isFist(first);
+  const palmOpen = isOpenPalm(first);
+  const pointing = isPointing(first);
+
+  // FIST: medium recharge, time based.
+  if (fist) {
+    stopRCT();
+    openPalmStart = 0;
+    pointStart = null;
+    previousIndex = {...idx};
+
+    if (!fistLast) fistLast=now;
+    const dt=Math.min(100,now-fistLast);
+    fistLast=now;
+    energy=Math.min(MAX_ENERGY,energy+dt*0.045);
+    updateHud();
+    status(`✊ RECHARGING ${Math.round(energy)}`);
+    return;
+  }
+  fistLast=0;
+
+  // RCT: one open palm, must be held for 450ms.
+  if (palmOpen && !pointing) {
+    previousIndex = {...idx};
+    pointStart = null;
+
+    if (!openPalmStart) openPalmStart = now;
+    const held=now-openPalmStart;
+
+    if (!rctActive) {
+      status(`🖐️ RCT ${Math.min(100,Math.round(held/450*100))}%`);
+      if (held >= 450) startRCT(palm);
+    } else {
+      status("RCT — REVERSED ENERGY");
+    }
+
+    updateRCT(now,palm);
+    return;
+  }
+  openPalmStart=0;
+
+  if (rctActive) stopRCT();
+
+  // Dismantle: start from the current fingertip and require deliberate travel.
+  if (pointing) {
+    if (!previousIndex) previousIndex={...idx};
+    if (!pointStart) pointStart={...idx};
+
+    const dx=idx.x-pointStart.x;
+    const dy=idx.y-pointStart.y;
     const travel=Math.hypot(dx,dy);
-    if(travel>=slashThreshold && now-lastSlashTime>=slashCooldown){
-      spawnSlash(idx.x,idx.y,Math.atan2(dy,dx));
-      pointStarted={...idx};
-    }
-  }else pointStarted=null;
 
-  // Fist: medium recharge speed, not instant.
-  if(s.fist && !s.open){
-    openSince=0;
-    if(!fistSince)fistSince=now;
-    if(now-fistSince>260 && energy<300){energy=Math.min(300,energy+1.15);updateHud()}
-  }else fistSince=0;
+    status("☝️ POINT — SWIPE TO DISMANTLE");
 
-  // Open palm: RCT follows the palm, consumes energy, restores HP.
-  if(s.open){
-    fistSince=0;
-    if(!openSince)openSince=now;
-    if(now-openSince>220){
-      rctActive=energy>0;
-      if(rctActive){energy=Math.max(0,energy-.75);hp=Math.min(100,hp+.45);updateHud()}
+    if (travel >= slashThreshold && gestureArmed && now-lastSlashTime >= SLASH_COOLDOWN) {
+      spawnSlash(idx.x,idx.y,Math.atan2(dy,dx),false);
+      pointStart={...idx};
+      gestureArmed=false;
     }
-  }else{
-    openSince=0;rctActive=false;
+
+    // Re-arm when the finger changes direction or a new motion segment starts.
+    const localMove=Math.hypot(idx.x-(previousIndex?.x||idx.x),idx.y-(previousIndex?.y||idx.y));
+    if (localMove > 12) gestureArmed=true;
+
+    previousIndex={...idx};
+    previousTime=now;
+    return;
   }
+
+  previousIndex=null;
+  pointStart=null;
+  gestureArmed=true;
+  status("Hand detected");
 }
 
-async function setupHands(){
-  if(!window.Hands){statusEl.textContent='Hand tracker did not load. Refresh the page.';return}
-  const hands=new Hands({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-  hands.setOptions({maxNumHands:2,modelComplexity:0,minDetectionConfidence:.6,minTrackingConfidence:.55,selfieMode:false});
-  hands.onResults(onResults);handsReady=true;
-  async function loop(){
-    if(cameraRunning&&video.readyState>=2&&!processing){
-      processing=true;
-      try{await hands.send({image:video})}catch(e){console.warn(e)}
-      processing=false;
+async function createDetector() {
+  const vision=await FilesetResolver.forVisionTasks(WASM_URL);
+  detector=await HandLandmarker.createFromOptions(vision,{
+    baseOptions:{modelAssetPath:MODEL_URL},
+    runningMode:"VIDEO",
+    numHands:2,
+    minHandDetectionConfidence:0.52,
+    minHandPresenceConfidence:0.52,
+    minTrackingConfidence:0.52
+  });
+}
+
+async function startCamera() {
+  stream=await navigator.mediaDevices.getUserMedia({
+    video:{
+      facingMode:"user",
+      width:{ideal:960,max:1280},
+      height:{ideal:540,max:720},
+      frameRate:{ideal:24,max:30}
+    },
+    audio:false
+  });
+
+  video.srcObject=stream;
+  await video.play();
+  running=true;
+  startBtn.disabled=true;
+  if(testSlashBtn) testSlashBtn.disabled=false;
+  status("Camera ready — show your hand");
+  resizeOverlay();
+  requestAnimationFrame(loop);
+}
+
+function loop(now) {
+  if (!running || !detector) return;
+
+  if (now-lastDetectTime >= 60 &&
+      video.readyState >= 2 &&
+      video.currentTime !== lastVideoTime) {
+    lastDetectTime=now;
+    lastVideoTime=video.currentTime;
+
+    try {
+      const results=detector.detectForVideo(video,now);
+      processResults(results);
+    } catch(err) {
+      console.error(err);
+      status("Hand tracking error — open Console");
     }
-    requestAnimationFrame(loop);
   }
-  loop();
+
+  // Domain lasts exactly 5 seconds and has no effect from one-hand gestures.
+  if (domainActive && now-domainStart >= 5000) {
+    stopDomain();
+    status("Domain ended");
+  }
+
+  if (combo > 0 && now>comboExpires) {
+    combo=0;
+    updateHud();
+  }
+
+  renderSlashes(now);
+  requestAnimationFrame(loop);
 }
 
-async function startCamera(){
-  try{
-    if(!handsReady)await setupHands();
-    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:960,max:1280},height:{ideal:540,max:720}},audio:false});
-    video.srcObject=stream;await video.play();cameraRunning=true;
-    statusEl.textContent='2-hand tracking ON — Point/Move: Slash • Fist: Recharge • Open Palm: RCT • 2 Hands: Domain';
-  }catch(e){console.error(e);statusEl.textContent='Camera or hand tracking failed. Allow camera permission and refresh.'}
+if (sensitivity) {
+  const sync=()=>{
+    slashThreshold=Number(sensitivity.value);
+    if(sensitivityValue) sensitivityValue.textContent=`${slashThreshold}px`;
+  };
+  sensitivity.addEventListener("input",sync);
+  sync();
 }
 
-const sensitivityEl=document.getElementById('sensitivity');
-const sensitivityValueEl=document.getElementById('sensitivityValue');
-if(sensitivityEl){
-  const syncSensitivity=()=>{
-    slashThreshold=Number(sensitivityEl.value);
-    if(sensitivityValueEl) sensitivityValueEl.textContent=`${slashThreshold}px`;
-  };
-  sensitivityEl.addEventListener('input',syncSensitivity);
-  syncSensitivity();
-}
+startBtn?.addEventListener("click",async()=>{
+  try {
+    await createDetector();
+    await startCamera();
+  } catch(err) {
+    console.error(err);
+    status(`Error: ${err.message}`);
+    startBtn.disabled=false;
+  }
+});
 
-document.getElementById('start').onclick=startCamera;
-document.getElementById('test').onclick=()=>addSlash(W/2,H/2,Math.random()*Math.PI*2);
-document.getElementById('hide').onclick=()=>panel.hidden=!panel.hidden;
-document.getElementById('show').onclick=()=>panel.hidden=false;
-addEventListener('keydown',e=>{if(e.key.toLowerCase()==='h')panel.hidden=!panel.hidden});
+testSlashBtn?.addEventListener("click",()=>{
+  spawnSlash(innerWidth/2,innerHeight/2,0,false);
+  status("TEST DISMANTLE");
+});
 
+hideBtn?.addEventListener("click",()=>{
+  const panel=document.querySelector(".panel");
+  if(panel) panel.classList.toggle("hidden");
+});
 
-/* v33 Domain Expansion overlay */
-(function () {
-  const overlay = document.getElementById('domain-overlay');
-  if (!overlay) return;
-
-  window.setDomainOverlay = function(active) {
-    overlay.classList.toggle('active', !!active);
-    overlay.setAttribute('aria-hidden', active ? 'false' : 'true');
-  };
-
-  // If the app already exposes a domain flag, this helper can be called directly.
-  // We also watch for common state changes used by the v32 build.
-  const originalSetTimeout = window.setTimeout;
-  window.domainOverlayAutoHide = function(ms) {
-    window.setDomainOverlay(true);
-    originalSetTimeout(() => window.setDomainOverlay(false), ms || 5000);
-  };
-})();
-
-/* v33 fallback: synchronize aura with a visible domain state if the existing
-   app uses a HUD/status element rather than a named domainActive variable. */
-(function () {
-  const overlay = document.getElementById('domain-overlay');
-  if (!overlay) return;
-  const scan = () => {
-    const text = document.body.innerText || '';
-    const active = /DOMAIN\s+EXPANSION/i.test(text) && /5s|ACTIVE/i.test(text);
-    if (active) window.setDomainOverlay?.(true);
-  };
-  new MutationObserver(scan).observe(document.body, {subtree:true, childList:true, characterData:true});
-})();
+updateHud();
