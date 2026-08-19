@@ -39,3 +39,10 @@ Two hands held for about 0.5 seconds activate Domain Expansion. It lasts 5 secon
 
 ## v37 slash render fix
 The Dismantle VFX is now rendered on a dedicated canvas. The spawn coordinates and angle are snapshotted once, so the slash remains exactly where it is created and cannot drift with the hand or HTML layout.
+
+
+## v38 slash unstuck
+- Dismantle now has a hard 440ms lifetime.
+- Render loop clears the effect canvas every frame.
+- Dead slash states are force-removed every frame.
+- Rendering no longer depends on a successful hand-detection frame.

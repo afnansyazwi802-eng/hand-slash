@@ -187,11 +187,12 @@ function isOpenPalm(h) {
 }
 
 /*
-  Dismantle fix:
-  this is a SNAPSHOT effect. x/y/angle are captured once and never changed.
-  It renders on a dedicated canvas so HTML/CSS/DOM positioning cannot move it.
+  Dismantle:
+  - Capture the fingertip position + swipe angle once.
+  - Keep the effect fixed there.
+  - It always removes itself after a hard lifetime.
 */
-function spawnSlash(x,y,angle,{domain=false}={}) {
+function spawnSlash(x, y, angle, {domain=false}={}) {
   if (!slashImage.complete || !slashImage.naturalWidth) {
     setStatus("Loading Dismantle VFX…");
     return false;
@@ -200,7 +201,7 @@ function spawnSlash(x,y,angle,{domain=false}={}) {
   const now = performance.now();
 
   if (!domain) {
-    if (now-lastSlashTime < SLASH_COOLDOWN) return false;
+    if (now - lastSlashTime < SLASH_COOLDOWN) return false;
     if (energy < 12) {
       setStatus("Not enough Energy");
       return false;
@@ -211,14 +212,15 @@ function spawnSlash(x,y,angle,{domain=false}={}) {
     updateHud();
   }
 
-  if (slashes.filter(s=>!s.dead).length >= (domain ? 6 : 1)) return false;
+  const max = domain ? 6 : 1;
+  if (slashes.filter(s => !s.dead).length >= max) return false;
 
   slashes.push({
     x,
     y,
     angle,
     born: now,
-    life: domain ? 380 : 520,
+    life: domain ? 320 : 440,
     baseWidth: Math.min(innerWidth * 0.64, 960),
     dead: false
   });
@@ -227,36 +229,38 @@ function spawnSlash(x,y,angle,{domain=false}={}) {
 }
 
 function renderSlashes(now) {
-  effectCtx.clearRect(0,0,innerWidth,innerHeight);
+  effectCtx.clearRect(0, 0, innerWidth, innerHeight);
 
   for (const s of slashes) {
-    const age = now-s.born;
+    if (s.dead) continue;
+
+    const age = now - s.born;
 
     if (age >= s.life) {
       s.dead = true;
       continue;
     }
 
-    const inAlpha = Math.min(age/55,1);
-    const outAlpha = Math.min((s.life-age)/90,1);
-    const alpha = inAlpha*outAlpha;
+    const enter = Math.min(age / 45, 1);
+    const exit = Math.min((s.life - age) / 75, 1);
+    const alpha = Math.max(0, Math.min(1, enter * exit));
 
-    const scale = 0.72 + 0.28*Math.min(age/95,1);
+    const scale = 0.72 + 0.28 * Math.min(age / 95, 1);
     const width = s.baseWidth * scale;
     const aspect = slashImage.naturalWidth / slashImage.naturalHeight;
     const height = width / aspect;
 
     effectCtx.save();
-    effectCtx.translate(s.x,s.y);
+    effectCtx.translate(s.x, s.y);
     effectCtx.rotate(s.angle);
     effectCtx.globalAlpha = alpha;
     effectCtx.globalCompositeOperation = "screen";
 
-    // CENTER ANCHOR: the actual center of the image stays exactly at x/y.
+    // CENTER LOCK: x/y are never modified after spawn.
     effectCtx.drawImage(
       slashImage,
-      -width/2,
-      -height/2,
+      -width / 2,
+      -height / 2,
       width,
       height
     );
@@ -264,8 +268,9 @@ function renderSlashes(now) {
     effectCtx.restore();
   }
 
-  for(let i=slashes.length-1;i>=0;i--){
-    if(slashes[i].dead) slashes.splice(i,1);
+  // Hard cleanup — this guarantees no permanent/stuck slash.
+  for (let i = slashes.length - 1; i >= 0; i--) {
+    if (slashes[i].dead) slashes.splice(i, 1);
   }
 }
 
@@ -492,9 +497,9 @@ async function startCamera(){
 }
 
 function loop(now){
-  if(!running || !detector) return;
+  if(!running) return;
 
-  if(video.readyState>=2 &&
+  if(detector && video.readyState>=2 &&
      video.currentTime!==lastVideoTime &&
      now-lastDetectTime>=60){
 
