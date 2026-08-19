@@ -30,3 +30,8 @@ Two hands held for about 0.5 seconds activate Domain Expansion. It lasts 5 secon
 - Higher default swipe threshold (75px) and 450ms cooldown reduce accidental slashes.
 - Domain has priority over RCT, lasts 5 seconds, and has a visible dark aura/title overlay.
 - RCT follows the palm only while active and stops when the open-palm gesture disappears.
+
+
+## v36 startup fix
+- `app.js` is an ES module and is now loaded with `type="module"` so Start Camera works again.
+- Fixed HP/Energy element IDs to match the JavaScript.

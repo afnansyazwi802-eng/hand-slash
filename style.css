@@ -194,3 +194,5 @@
   animation:rctpulse 1s ease-in-out infinite alternate;
 }
 @keyframes rctpulse{to{transform:scale(1.12);opacity:.58}}
+
+.panel,.hud,.show{pointer-events:auto;}

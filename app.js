@@ -612,3 +612,8 @@ hideBtn?.addEventListener("click",()=>{
 });
 
 updateHud();
+
+window.addEventListener("error", (event) => {
+  const text = event?.error?.message || event?.message;
+  if (text && typeof status === "function") status(`JS error: ${text}`);
+});
