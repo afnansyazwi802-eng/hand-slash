@@ -1,33 +1,10 @@
-# Hand Slash — Fixed Dismantle VFX
+# Hand Slash v30 — Two-Hand Tracking
 
-This build fixes the broken interaction in the previous ZIP.
+MediaPipe Hands is configured with `maxNumHands: 2`.
 
-## Important fixes
-- Uses the supplied `assets/dismantle-vfx.png` as the **only** Dismantle slash VFX.
-- Removed the old `horizontal.png`, `vertical.png`, and other unused slash assets.
-- Restored actual webcam hand tracking with MediaPipe Hands.
-- The slash is spawned at the **visible index-finger position** when the swipe is detected.
-- The slash image is drawn from its **center**, not from its tip/end.
-- After spawning, the slash is completely fixed in world/screen position. It does **not** follow the finger.
-- Swipe direction controls the slash rotation through the full 360°.
-- One slash per swipe, with a short cooldown to prevent accidental double-spawns.
-- The VFX is clamped so its center cannot be spawned outside the visible screen.
-- `Test Slash` gives a reliable way to test the VFX without the camera.
-- `Hide`/`SHOW` controls are restored.
-- Energy is 300 max and costs 12 per slash.
-- Fist gives a deliberately medium-speed recharge.
-- Open palm performs RCT while held; RCT stops as soon as the open-palm gesture disappears.
-- RCT consumes energy and heals HP.
-- Two hands held near each other for about 0.85s activate Domain Expansion, which lasts 5 seconds.
-- Domain slashes are also fixed after spawning.
-- Camera processing is capped around 24 FPS and uses MediaPipe's lighter model (`modelComplexity: 0`) to keep an i5 laptop comfortable.
+- 1 hand + pointing index + move: Dismantle
+- Fist: medium energy recharge
+- Open palm: RCT, consumes energy and restores HP
+- 2 hands visible for about 0.55s: Domain Expansion for 5s
 
-## GitHub Pages
-Upload the contents of this folder to the repository root and make sure GitHub Pages publishes `main` → `/ (root)`.
-
-The browser must be allowed to load the MediaPipe library from jsDelivr, so an internet connection is required for hand tracking.
-
-## If the page still shows an old version
-GitHub Pages/browser caching can keep an older JavaScript file. Do a hard refresh:
-- Windows/Chrome: `Ctrl + Shift + R`
-- If necessary, open the GitHub Pages URL in an Incognito window.
+Uses modelComplexity 0 and 960x540 ideal camera input for a lighter laptop workload. GitHub Pages must be loaded over HTTPS and the browser must be allowed to use the camera.
