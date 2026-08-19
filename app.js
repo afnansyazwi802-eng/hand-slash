@@ -677,29 +677,21 @@ function spawnSlash(direction, point, demo = false, vector = null) {
   const rect = video.getBoundingClientRect();
   const length = Math.max(rect.width, rect.height) * 1.55;
 
-  const slash = document.createElement("div");
-  slash.className = "slash-fallback slash-real clean-dismantle";
+  // Use the supplied clean Dismantle artwork as the actual VFX.
+  // The PNG is transparent, so only the razor-white slash is visible.
+  const slash = document.createElement("img");
+  slash.className = "slash-image clean-dismantle";
+  slash.src = "assets/dismantle-clean.png";
+  slash.alt = "";
+  slash.draggable = false;
   slash.style.left = `${pos.x}%`;
   slash.style.top = `${pos.y}%`;
   slash.style.width = `${length}px`;
   slash.style.setProperty("--slash-angle", `${angle}deg`);
   slash.style.setProperty("--slash-length", `${length}px`);
 
-  // Keep the hand as the physical origin. The slash is not centered on the screen.
+  // Keep the hand as the physical origin. The slash extends outward in any 360° direction.
   slashLayer.appendChild(slash);
-
-  // Tiny fragments are emitted along the line, not as a large explosion.
-  for (let i = 0; i < 4; i++) {
-    const fragment = document.createElement("span");
-    fragment.className = "slash-fragment";
-    fragment.style.left = `${pos.x}%`;
-    fragment.style.top = `${pos.y}%`;
-    fragment.style.setProperty("--fragment-angle", `${angle + (Math.random() - .5) * 8}deg`);
-    fragment.style.setProperty("--fragment-distance", `${70 + Math.random() * 150}px`);
-    fragment.style.setProperty("--fragment-delay", `${25 + i * 18}ms`);
-    slashLayer.appendChild(fragment);
-    setTimeout(() => fragment.remove(), 380);
-  }
 
   const duration = demo ? 620 : 250;
   const animation = slash.animate(

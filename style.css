@@ -835,61 +835,26 @@ input[type="range"] {
 }
 
 
-/* v16: Dismantle is a physical slash, not a fade-in/fade-out effect. */
+/* v18: supplied clean Dismantle artwork, launched from the hand in any 360° direction. */
 .slash-real {
   opacity: 1 !important;
-  will-change: transform, clip-path, filter;
-  transform-origin: var(--slash-origin, center center);
-  clip-path: inset(0 0 0 0);
-}
-
-.slash-fallback.slash-real {
-  border-radius: 999px;
-  background: #fff;
-  box-shadow: 0 0 10px #fff, 0 0 28px rgba(255,255,255,.9), 0 0 55px rgba(255,255,255,.35);
-}
-
-
-/* v17: clean natural 360-degree Dismantle VFX */
-.clean-dismantle {
-  position: absolute;
-  height: 4px;
-  transform-origin: 0 50%;
-  transform: translate(0, -50%) rotate(var(--slash-angle, 0deg)) scaleX(.01);
-  border-radius: 999px;
-  pointer-events: none;
-  z-index: 18;
-  background: #fff;
-  box-shadow:
-    0 0 4px #fff,
-    0 0 10px rgba(255,255,255,.95),
-    0 0 24px rgba(255,255,255,.55);
   will-change: transform, filter;
 }
 
-.clean-dismantle::before {
-  content: "";
+.slash-image.clean-dismantle {
   position: absolute;
-  left: 0;
-  top: 50%;
-  width: 100%;
-  height: 10px;
-  transform: translateY(-50%);
-  border-radius: inherit;
-  background: rgba(255,255,255,.3);
-  filter: blur(5px);
-}
-
-.clean-dismantle::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 50%;
-  width: 14%;
-  height: 2px;
-  transform: translateY(-50%);
-  background: #fff;
-  box-shadow: 0 0 8px #fff;
+  height: auto;
+  aspect-ratio: 1517 / 871;
+  object-fit: contain;
+  object-position: left center;
+  transform-origin: 0 100%;
+  transform: translate(0, -100%) rotate(calc(var(--slash-angle, 0deg) + 30deg)) scaleX(.012);
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  z-index: 18;
+  filter: brightness(1.15) drop-shadow(0 0 5px rgba(255,255,255,.7)) drop-shadow(0 0 14px rgba(255,255,255,.28));
+  will-change: transform, filter;
 }
 
 .slash-fragment {
