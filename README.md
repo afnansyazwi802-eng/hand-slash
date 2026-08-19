@@ -197,8 +197,8 @@ RCT now has a white reversed-energy animation: particles spiral inward toward th
 - RCT follows the open-palm hand position during healing.
 
 
-## v16 Dismantle + RCT gesture behavior
-
-- Dismantle now grows outward from the hand in the swipe direction instead of fading in/out.
-- The slash remains bright briefly and then cuts away, with a short impact response.
-- RCT follows the open palm and stops immediately when the open-palm gesture is lost or a second hand appears.
+## v17 — Natural 360° Dismantle
+- Dismantle now uses a lightweight pure-CSS/DOM slash VFX instead of image assets.
+- The slash starts at the hand and extends outward using the exact swipe angle from 0°–360°.
+- The strike uses a fast extension, slight overshoot, clean hold, and abrupt removal instead of a fade.
+- Domain slashes can also appear at any angle.

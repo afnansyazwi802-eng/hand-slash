@@ -27,8 +27,6 @@ const hpText = document.querySelector("#hpText");
 const hudPanel = document.querySelector(".hud");
 const hudToggle = document.querySelector("#hudToggle");
 
-const HORIZONTAL_ASSET = "./assets/horizontal.png";
-const VERTICAL_ASSET = "./assets/vertical.png";
 
 let handLandmarker = null;
 let stream = null;
@@ -170,13 +168,11 @@ function isOpenPalm(hand) {
 }
 
 function getDirection(dx, dy) {
-  const ax = Math.abs(dx);
-  const ay = Math.abs(dy);
-
-  if (ax > ay * 1.35) return "horizontal";
-  if (ay > ax * 1.35) return "vertical";
-
-  return dy < 0 ? "diagonal-up" : "diagonal-down";
+  const degrees = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
+  return {
+    label: `slash-${Math.round(degrees)}deg`,
+    angle: degrees
+  };
 }
 
 function resizeOverlay() {
@@ -560,11 +556,10 @@ function randomDomainSlash() {
     y: 70 + Math.random() * Math.max(1, rect.height - 140)
   };
 
-  const directions = ["horizontal", "vertical", "diagonal-up", "diagonal-down"];
-  const direction = directions[Math.floor(Math.random() * directions.length)];
+  const angle = Math.random() * 360;
+  const direction = { label: `slash-${Math.round(angle)}deg`, angle };
 
-  // During the domain, slashes are deliberately automatic and frequent,
-  // but still capped by the normal slash limit.
+  // During the domain, slashes can appear at ANY angle.
   spawnParticles(point);
   spawnImpact(point, direction);
   spawnSlash(direction, point, false);
@@ -667,148 +662,75 @@ function spawnSlash(direction, point, demo = false, vector = null) {
   if (existing >= (domainActive ? 5 : 3) && !demo) return;
 
   const pos = point ? screenToPercent(point) : { x: 50, y: 50 };
-  const hasGestureVector = !!vector && !demo && !domainActive;
 
-  const angle =
-    direction === "diagonal-up"
-      ? -25
-      : direction === "diagonal-down"
-        ? 25
-        : 0;
+  // A gesture supplies the exact movement angle. This gives the slash true 360° control.
+  // Domain/demo slashes can also supply an explicit angle.
+  let angle = typeof direction === "object" && Number.isFinite(direction.angle)
+    ? direction.angle
+    : 0;
 
-  const src = direction === "vertical" ? VERTICAL_ASSET : HORIZONTAL_ASSET;
-
-  const img = document.createElement("img");
-  img.className = "slash slash-real";
-  img.alt = "";
-  img.src = src;
-
-  img.style.left = `${pos.x}%`;
-  img.style.top = `${pos.y}%`;
-  img.style.width = direction === "vertical"
-    ? "min(62vh, 900px)"
-    : "min(92vw, 1250px)";
-
-  // For a gesture slash, the hand is the origin and the effect grows OUTWARD.
-  // For demo/domain slashes we keep the centered presentation.
-  let origin = "center center";
-  let translate = "translate(-50%, -50%)";
-  let clipStart = "inset(0 0 0 0)";
-
-  if (hasGestureVector) {
-    const vx = vector.x || 0;
-    const vy = vector.y || 0;
-
-    if (direction === "horizontal" || direction.startsWith("diagonal")) {
-      const towardRight = vx >= 0;
-      origin = towardRight ? "left center" : "right center";
-      translate = towardRight ? "translate(0, -50%)" : "translate(-100%, -50%)";
-      clipStart = towardRight ? "inset(0 100% 0 0)" : "inset(0 0 0 100%)";
-    } else if (direction === "vertical") {
-      const towardDown = vy >= 0;
-      origin = towardDown ? "center top" : "center bottom";
-      translate = towardDown ? "translate(-50%, 0)" : "translate(-50%, -100%)";
-      clipStart = towardDown ? "inset(100% 0 0 0)" : "inset(0 0 100% 0)";
-    }
+  if (vector && !demo && !domainActive) {
+    angle = (Math.atan2(vector.y, vector.x) * 180 / Math.PI + 360) % 360;
   }
 
-  img.style.transformOrigin = origin;
-  img.style.setProperty("--slash-angle", `${angle}deg`);
-  img.style.setProperty("--slash-translate", translate);
-  img.style.setProperty("--slash-clip-start", clipStart);
-  slashLayer.appendChild(img);
+  // A long, clean slash starts exactly at the hand and travels outward.
+  const rect = video.getBoundingClientRect();
+  const length = Math.max(rect.width, rect.height) * 1.55;
 
-  let finished = false;
-  const remove = () => {
-    if (finished) return;
-    finished = true;
-    img.remove();
-  };
+  const slash = document.createElement("div");
+  slash.className = "slash-fallback slash-real clean-dismantle";
+  slash.style.left = `${pos.x}%`;
+  slash.style.top = `${pos.y}%`;
+  slash.style.width = `${length}px`;
+  slash.style.setProperty("--slash-angle", `${angle}deg`);
+  slash.style.setProperty("--slash-length", `${length}px`);
 
-  img.onerror = () => {
-    console.warn("Slash image failed to load:", src);
-    img.remove();
+  // Keep the hand as the physical origin. The slash is not centered on the screen.
+  slashLayer.appendChild(slash);
 
-    const fallback = document.createElement("div");
-    fallback.className = "slash-fallback slash-real";
-    fallback.style.left = `${pos.x}%`;
-    fallback.style.top = `${pos.y}%`;
-    fallback.style.transformOrigin = origin;
-
-    if (direction === "vertical") {
-      fallback.style.width = "9px";
-      fallback.style.height = "min(70vh, 900px)";
-    } else {
-      fallback.style.width = "min(78vw, 1000px)";
-      fallback.style.height = "9px";
-    }
-
-    fallback.style.setProperty("--slash-angle", `${angle}deg`);
-    fallback.style.setProperty("--slash-translate", translate);
-    fallback.style.setProperty("--slash-clip-start", clipStart);
-    slashLayer.appendChild(fallback);
-
-    const animation = fallback.animate(
-      [
-        { opacity: 1, clipPath: clipStart, transform: `${translate} rotate(${angle}deg) scale(.55)` },
-        { opacity: 1, clipPath: "inset(0 0 0 0)", transform: `${translate} rotate(${angle}deg) scale(1.05)` },
-        { opacity: 1, clipPath: "inset(0 0 0 0)", transform: `${translate} rotate(${angle}deg) scale(1.12)` }
-      ],
-      {
-        duration: demo ? 900 : 420,
-        easing: "cubic-bezier(.08,.72,.12,1)",
-        fill: "forwards"
-      }
-    );
-
-    animation.finished.catch(() => {}).finally(() => {
-      // Let the slash hang for a short beat instead of fading out.
-      setTimeout(() => fallback.remove(), demo ? 180 : 130);
-    });
-  };
-
-  const animateImage = () => {
-    if (finished) return;
-
-    img.animate(
-      [
-        {
-          opacity: 1,
-          clipPath: clipStart,
-          transform: `${translate} rotate(${angle}deg) scale(.45)`,
-          filter: "contrast(1.25) blur(1.5px)"
-        },
-        {
-          opacity: 1,
-          clipPath: "inset(0 0 0 0)",
-          transform: `${translate} rotate(${angle}deg) scale(1.05)`,
-          filter: "contrast(1.5) blur(0)"
-        },
-        {
-          opacity: 1,
-          clipPath: "inset(0 0 0 0)",
-          transform: `${translate} rotate(${angle}deg) scale(1.12)`,
-          filter: "contrast(1.25) blur(.35px)"
-        }
-      ],
-      {
-        duration: demo ? 900 : 420,
-        easing: "cubic-bezier(.08,.72,.12,1)",
-        fill: "forwards"
-      }
-    ).finished
-      .catch(() => {})
-      .finally(() => {
-        // The slash remains solid briefly, then disappears abruptly.
-        setTimeout(remove, demo ? 180 : 130);
-      });
-  };
-
-  if (img.complete && img.naturalWidth > 0) {
-    animateImage();
-  } else {
-    img.onload = animateImage;
+  // Tiny fragments are emitted along the line, not as a large explosion.
+  for (let i = 0; i < 4; i++) {
+    const fragment = document.createElement("span");
+    fragment.className = "slash-fragment";
+    fragment.style.left = `${pos.x}%`;
+    fragment.style.top = `${pos.y}%`;
+    fragment.style.setProperty("--fragment-angle", `${angle + (Math.random() - .5) * 8}deg`);
+    fragment.style.setProperty("--fragment-distance", `${70 + Math.random() * 150}px`);
+    fragment.style.setProperty("--fragment-delay", `${25 + i * 18}ms`);
+    slashLayer.appendChild(fragment);
+    setTimeout(() => fragment.remove(), 380);
   }
+
+  const duration = demo ? 620 : 250;
+  const animation = slash.animate(
+    [
+      {
+        opacity: 1,
+        transform: `translate(0, -50%) rotate(${angle}deg) scaleX(0.015)`,
+        filter: "brightness(1.8) blur(1.2px)"
+      },
+      {
+        opacity: 1,
+        transform: `translate(0, -50%) rotate(${angle}deg) scaleX(1.08)`,
+        filter: "brightness(2) blur(0)"
+      },
+      {
+        opacity: .98,
+        transform: `translate(0, -50%) rotate(${angle}deg) scaleX(1)`,
+        filter: "brightness(1.35) blur(.2px)"
+      }
+    ],
+    {
+      duration,
+      easing: "cubic-bezier(.08,.82,.16,1)",
+      fill: "forwards"
+    }
+  );
+
+  animation.finished.catch(() => {}).finally(() => {
+    // Keep the strike visible for a beat, then cut it away rather than fading it.
+    setTimeout(() => slash.remove(), demo ? 160 : 90);
+  });
 }
 
 function triggerSlash(direction, point, demo = false, vector = null) {
@@ -976,7 +898,7 @@ function processResults(results) {
 
   if (gestureModeEl.value === "point") {
     if (now - lastSlashTime > 700) {
-      triggerSlash("horizontal", tip);
+      triggerSlash({ label: "slash-0deg", angle: 0 }, tip);
     }
     return;
   }
@@ -989,9 +911,10 @@ function processResults(results) {
     now - lastSlashTime > COOLDOWN_MS
   ) {
     const direction = getDirection(dx, dy);
+    const directionKey = Math.round(direction.angle);
 
-    if (movementRatio >= sensitivity * 1.15 || direction !== previousDirection) {
-      previousDirection = direction;
+    if (movementRatio >= sensitivity * 1.02 || directionKey !== previousDirection) {
+      previousDirection = directionKey;
       triggerSlash(direction, tip, false, { x: dx, y: dy });
     }
   }
@@ -1034,19 +957,13 @@ startBtn.addEventListener("click", async () => {
 });
 
 demoBtn.addEventListener("click", () => {
-  const directions = [
-    "horizontal",
-    "vertical",
-    "diagonal-up",
-    "diagonal-down"
-  ];
-
   const rect = video.getBoundingClientRect();
+  const angle = Math.random() * 360;
 
   setStatus("TEST SLASH!");
 
   triggerSlash(
-    directions[Math.floor(Math.random() * directions.length)],
+    { label: `slash-${Math.round(angle)}deg`, angle },
     {
       x: rect.width * 0.5,
       y: rect.height * 0.5
