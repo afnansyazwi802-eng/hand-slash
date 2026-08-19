@@ -1,81 +1,39 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#050505" />
-  <title>Hand Slash — Camera Gesture Effect</title>
-  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="./style.css" />
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hand Slash — Single Clean Dismantle</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main class="app">
-    <video id="camera" autoplay playsinline muted></video>
+<video id="camera" autoplay playsinline muted></video>
+<canvas id="overlay"></canvas>
 
-    <canvas id="handOverlay"></canvas>
-    <div class="vignette"></div>
-    <div id="gestureFx" aria-hidden="true"></div>
-    <div id="domainFx" aria-hidden="true"></div>
-    <div id="rctFx" aria-hidden="true"></div>
-    <div id="slashLayer" aria-hidden="true"></div>
+<section class="panel" id="panel">
+  <h1>HAND SLASH</h1>
+  <p>Point + move your index finger to launch one clean Dismantle slash.</p>
+  <div class="buttons">
+    <button id="start">Start Camera</button>
+    <button id="test">Test Slash</button>
+    <button id="hide">Hide</button>
+  </div>
+  <label>Gesture
+    <select id="gesture">
+      <option>Point + Move</option>
+    </select>
+  </label>
+  <label>Sensitivity
+    <input id="sensitivity" type="range" min="0.5" max="2" step="0.05" value="1">
+  </label>
+  <div id="status">Camera off</div>
+</section>
 
-    <div class="combat-hud" aria-hidden="true">
-      <div>COMBO <strong id="combo">0</strong></div>
+<section class="hud">
+  <div>COMBO <b id="combo">0</b></div>
+  <div>ENERGY <span class="bar"><i id="energy"></i></span></div>
+</section>
 
-      <div class="resource-row">
-        <div class="resource-label">
-          <span>HP</span>
-          <span id="hpText">70 / 100</span>
-        </div>
-        <div class="resource-bar hp-bar"><i id="hpBar"></i></div>
-      </div>
-
-      <div class="resource-row">
-        <div class="resource-label">
-          <span>ENERGY</span>
-          <span id="energyText">300 / 300</span>
-        </div>
-        <div class="resource-bar energy-bar"><i id="energyBar"></i></div>
-      </div>
-    </div>
-
-    <button id="hudToggle" class="hud-toggle" type="button" aria-label="Hide controls" aria-expanded="true">−</button>
-    <section class="hud">
-      <div class="hud-content">
-        <div>
-          <h1>HAND SLASH</h1>
-        <p id="status">Press Start Camera</p>
-      </div>
-
-      <div class="controls">
-        <button id="startBtn">Start Camera</button>
-        <button id="damageBtn" type="button">Test Damage</button>
-          <button id="demoBtn" disabled>Test Slash</button>
-      </div>
-
-      <div class="settings">
-        <label>
-          Gesture
-          <select id="gestureMode">
-            <option value="point-move" selected>Point + Move</option>
-            <option value="point">Point Only</option>
-          </select>
-        </label>
-
-        <label>
-          Sensitivity
-          <input id="sensitivity" type="range" min="0.012" max="0.06" step="0.001" value="0.028" />
-        </label>
-      </div>
-
-      <p class="hint">
-        Point with your index finger. Move your hand quickly to choose the slash direction.
-        Horizontal, vertical, and diagonal slashes are supported.
-      </p>
-      </div>
-    </section>
-  </main>
-
-  <script type="module" src="./app.js?v=27"></script>
+<script src="app.js"></script>
 </body>
 </html>
