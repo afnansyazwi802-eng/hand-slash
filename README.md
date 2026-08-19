@@ -197,5 +197,12 @@ RCT now has a white reversed-energy animation: particles spiral inward toward th
 - RCT follows the open-palm hand position during healing.
 
 
-## v23 Finger-follow Dismantle
+## v24 Finger-follow Dismantle
 The Dismantle slash remains anchored to the index fingertip during its short strike animation instead of flying away from the hand.
+
+
+### v24 Dismantle VFX
+- Slash center is anchored to the index fingertip.
+- Finger movement controls rotation only.
+- Slash expands from its center and never flies away.
+- 360-degree directions are supported.

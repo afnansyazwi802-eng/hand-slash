@@ -701,7 +701,7 @@ function spawnSlash(direction, point, demo = false, vector = null) {
 
   // Smaller than the projectile version so the slash remains visible
   // while staying attached to the fingertip.
-  const slashWidth = Math.max(300, Math.min(560, diagonal * 0.42));
+  const slashWidth = Math.max(280, Math.min(520, diagonal * 0.38));
   const slashHeight = slashWidth * (869 / 1515);
 
   const startX = launch.x + videoRect.left - layerRect.left;
@@ -726,8 +726,9 @@ function spawnSlash(direction, point, demo = false, vector = null) {
   projectile.appendChild(slash);
   slashLayer.appendChild(projectile);
 
-  // The slash does NOT fly away anymore.
-  // It stays attached to the fingertip while the short strike animation plays.
+  // The slash is CENTER-ANCHORED on the fingertip.
+  // The fingertip is the middle of the cut, never its left/right edge.
+  // It does not travel forward; only its length snaps outward.
   const duration = demo ? 520 : 300;
   const start = performance.now();
 
@@ -763,7 +764,7 @@ function spawnSlash(direction, point, demo = false, vector = null) {
     }
 
     projectile.style.transform =
-      `translate3d(0, 0, 0) rotate(${rotation}deg) scaleX(${scaleX})`;
+      `translate3d(-50%, -50%, 0) rotate(${rotation}deg) scaleX(${scaleX})`;
     projectile.style.opacity = opacity.toFixed(3);
 
     if (t < 1) {
@@ -778,7 +779,7 @@ function spawnSlash(direction, point, demo = false, vector = null) {
 
   requestAnimationFrame(animateSlash);
 
-  // Very small fragments remain at the fingertip rather than flying away.
+  // Tiny fragments stay around the slash center instead of becoming projectiles.
   const fragmentCount = demo ? 3 : 1;
   for (let i = 0; i < fragmentCount; i++) {
     const fragment = document.createElement("span");
