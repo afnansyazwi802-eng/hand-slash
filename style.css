@@ -932,3 +932,58 @@ input[type="range"] {
   box-shadow: 0 0 4px rgba(255,255,255,.85), 0 0 1px #fff;
   z-index: 19;
 }
+
+
+/* v20: Dismantle is anchored to the index fingertip.
+   JS compensates for this origin before rotating, so the blade stays attached
+   to the finger at every 360° movement direction. */
+.slash-dismantle-v20 {
+  position: absolute;
+  z-index: 20;
+  display: block;
+  height: auto;
+  pointer-events: none;
+  user-select: none;
+  mix-blend-mode: normal;
+  transform-origin: 3% 97%;
+  will-change: transform, opacity, filter;
+}
+
+.slash-fragment-v20 {
+  position: absolute;
+  width: 16px;
+  height: 2px;
+  transform-origin: 0 50%;
+  transform:
+    translate(-1px, -50%)
+    rotate(var(--fragment-angle))
+    translateX(0)
+    scaleX(.35);
+  opacity: 0;
+  background: #080808;
+  box-shadow: 0 0 4px rgba(255,255,255,.75), 0 0 1px #fff;
+  pointer-events: none;
+  z-index: 19;
+  animation: slash-fragment-v20-out 320ms cubic-bezier(.15,.7,.2,1)
+    var(--fragment-delay) forwards;
+}
+
+@keyframes slash-fragment-v20-out {
+  0% {
+    opacity: 0;
+    transform:
+      translate(-1px,-50%)
+      rotate(var(--fragment-angle))
+      translateX(0)
+      scaleX(.25);
+  }
+  18% { opacity: .85; }
+  100% {
+    opacity: 0;
+    transform:
+      translate(-1px,-50%)
+      rotate(var(--fragment-angle))
+      translateX(var(--fragment-distance))
+      scaleX(.75);
+  }
+}

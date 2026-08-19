@@ -661,9 +661,14 @@ function spawnSlash(direction, point, demo = false, vector = null) {
   const existing = slashLayer.querySelectorAll(".slash, .slash-fallback").length;
   if (existing >= (domainActive ? 5 : 3) && !demo) return;
 
-  const pos = point ? screenToPercent(point) : { x: 50, y: 50 };
+  const rect = video.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
 
-  // The user's finger movement controls the slash angle continuously from 0–360°.
+  // The slash is released from the actual index fingertip.
+  const fingerX = point ? point.x : rect.width * 0.5;
+  const fingerY = point ? point.y : rect.height * 0.5;
+
+  // Use the real movement vector for a true 0–360° direction.
   let angle = typeof direction === "object" && Number.isFinite(direction.angle)
     ? direction.angle
     : 0;
@@ -672,71 +677,98 @@ function spawnSlash(direction, point, demo = false, vector = null) {
     angle = (Math.atan2(vector.y, vector.x) * 180 / Math.PI + 360) % 360;
   }
 
-  // The artwork itself is angled about 30°. Rotate it back first, then add
-  // the user's movement angle so the actual blade follows the finger.
-  const ART_ANGLE = 30;
-  const finalRotation = angle - ART_ANGLE;
-  const rect = video.getBoundingClientRect();
-  const slashWidth = Math.max(520, Math.min(1200, Math.max(rect.width, rect.height) * 0.95));
+  // The supplied Dismantle artwork points up-right at about -30° in its
+  // natural orientation. Add 30° so its blade direction exactly matches
+  // the user's movement direction.
+  const ART_DIRECTION = -30;
+  const finalRotation = angle - ART_DIRECTION;
+
+  // Keep the effect large enough to feel powerful, but small enough that
+  // the user can still see most of it on screen.
+  const slashWidth = Math.max(
+    420,
+    Math.min(760, Math.min(rect.width, rect.height) * 0.92)
+  );
+  const slashHeight = slashWidth * (869 / 1515);
 
   const slash = document.createElement("img");
-  slash.className = "slash slash-dismantle-v19";
-  slash.src = "./dismantle-vfx.png?v=19";
+  slash.className = "slash slash-dismantle-v20";
+  slash.src = "./dismantle-vfx.png?v=20";
   slash.alt = "";
   slash.draggable = false;
-  slash.style.left = `${pos.x}%`;
-  slash.style.top = `${pos.y}%`;
+
+  // The artwork's lower-left release point becomes the fingertip.
+  // IMPORTANT: left/top must compensate for the transform origin.
+  const ORIGIN_X = 0.03;
+  const ORIGIN_Y = 0.97;
+
   slash.style.width = `${slashWidth}px`;
+  slash.style.left = `${fingerX - slashWidth * ORIGIN_X}px`;
+  slash.style.top = `${fingerY - slashHeight * ORIGIN_Y}px`;
+  slash.style.transformOrigin = `${ORIGIN_X * 100}% ${ORIGIN_Y * 100}%`;
   slash.style.setProperty("--slash-angle", `${finalRotation}deg`);
   slash.style.setProperty("--finger-angle", `${angle}deg`);
 
-  // The lower-left tip of the artwork is the physical release point.
-  // This makes the slash appear to launch directly from the index fingertip.
-  slash.style.transformOrigin = "3% 97%";
   slashLayer.appendChild(slash);
 
-  const duration = demo ? 520 : 210;
+  // A quick "release -> extension -> settle" motion makes the cut feel
+  // like it came out of the hand instead of being pasted onto the screen.
+  const duration = demo ? 560 : 235;
+
   const animation = slash.animate(
     [
       {
         opacity: 0,
-        transform: `rotate(${finalRotation}deg) scaleX(.035)`,
-        filter: "brightness(1.15) contrast(1.2)"
+        transform: `rotate(${finalRotation}deg) scaleX(0.018)`,
+        filter: "brightness(1.05) contrast(1.15)"
       },
       {
         opacity: 1,
-        transform: `rotate(${finalRotation}deg) scaleX(1.04)`,
-        filter: "brightness(1.45) contrast(1.25)"
+        transform: `rotate(${finalRotation}deg) scaleX(1.08)`,
+        filter: "brightness(1.5) contrast(1.35)",
+        offset: 0.62
       },
       {
         opacity: 1,
         transform: `rotate(${finalRotation}deg) scaleX(1)`,
-        filter: "brightness(1.05) contrast(1.15)"
+        filter: "brightness(1.08) contrast(1.18)",
+        offset: 0.82
+      },
+      {
+        opacity: 0,
+        transform: `rotate(${finalRotation}deg) scaleX(1.015)`,
+        filter: "brightness(1.02) contrast(1.12)"
       }
     ],
     {
       duration,
-      easing: "cubic-bezier(.08,.84,.14,1)",
+      easing: "cubic-bezier(.12,.8,.16,1)",
       fill: "forwards"
     }
   );
 
-  // Small black/white debris follows the blade rather than exploding around it.
+  // Debris starts at the same fingertip, so it visually belongs to the cut.
   const fragmentCount = demo ? 5 : 3;
   for (let i = 0; i < fragmentCount; i++) {
     const fragment = document.createElement("span");
-    fragment.className = "slash-fragment slash-fragment-v19";
-    fragment.style.left = `${pos.x}%`;
-    fragment.style.top = `${pos.y}%`;
-    fragment.style.setProperty("--fragment-angle", `${angle + (Math.random() - .5) * 10}deg`);
-    fragment.style.setProperty("--fragment-distance", `${55 + Math.random() * 110}px`);
-    fragment.style.setProperty("--fragment-delay", `${30 + i * 22}ms`);
+    fragment.className = "slash-fragment slash-fragment-v20";
+    fragment.style.left = `${fingerX}px`;
+    fragment.style.top = `${fingerY}px`;
+    fragment.style.setProperty(
+      "--fragment-angle",
+      `${angle + (Math.random() - 0.5) * 10}deg`
+    );
+    fragment.style.setProperty(
+      "--fragment-distance",
+      `${35 + Math.random() * 75}px`
+    );
+    fragment.style.setProperty("--fragment-delay", `${25 + i * 18}ms`);
     slashLayer.appendChild(fragment);
-    setTimeout(() => fragment.remove(), 360);
+    setTimeout(() => fragment.remove(), 340);
   }
 
   animation.finished.catch(() => {}).finally(() => {
-    setTimeout(() => slash.remove(), demo ? 130 : 55);
+    setTimeout(() => slash.remove(), demo ? 80 : 35);
   });
 }
 
@@ -774,6 +806,9 @@ function processResults(results) {
     window.__openPalmStart = 0;
     window.__twoPalmStart = 0;
     window.__fistLastTime = 0;
+    previousTip = null;
+    smoothedTip = null;
+    previousDirection = null;
     return;
   }
 
