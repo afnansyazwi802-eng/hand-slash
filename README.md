@@ -195,3 +195,7 @@ RCT now has a white reversed-energy animation: particles spiral inward toward th
 - The HUD control toggle is now a clearly visible HIDE/SHOW pill outside the control panel.
 
 - RCT follows the open-palm hand position during healing.
+
+
+## v23 Finger-follow Dismantle
+The Dismantle slash remains anchored to the index fingertip during its short strike animation instead of flying away from the hand.
