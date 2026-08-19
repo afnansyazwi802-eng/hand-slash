@@ -44,6 +44,8 @@ let lastDetectTime = 0;
 let hp = 70;
 let energy = 300;
 let combo = 0;
+let comboExpires = 0;
+const COMBO_TIMEOUT = 2000;
 const MAX_HP = 100;
 const MAX_ENERGY = 300;
 
@@ -208,6 +210,7 @@ function spawnSlash(x, y, angle, {domain=false}={}) {
     }
     energy -= 12;
     combo += 1;
+    comboExpires = now + COMBO_TIMEOUT;
     lastSlashTime = now;
     updateHud();
   }

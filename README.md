@@ -40,9 +40,5 @@ Two hands held for about 0.5 seconds activate Domain Expansion. It lasts 5 secon
 ## v37 slash render fix
 The Dismantle VFX is now rendered on a dedicated canvas. The spawn coordinates and angle are snapshotted once, so the slash remains exactly where it is created and cannot drift with the hand or HTML layout.
 
-
-## v38 slash unstuck
-- Dismantle now has a hard 440ms lifetime.
-- Render loop clears the effect canvas every frame.
-- Dead slash states are force-removed every frame.
-- Rendering no longer depends on a successful hand-detection frame.
+## v38 crash fix
+Fixed a `ReferenceError: comboExpires is not defined` that crashed the render loop (`requestAnimationFrame`) after the first successful Dismantle slash. `comboExpires` was referenced in `loop()` but never declared or assigned anywhere, so once `combo > 0` the loop threw uncaught on every frame and hand tracking / RCT / Domain / slash rendering all silently stopped. Now `comboExpires` is declared alongside the other state variables and is set whenever a slash lands, so combo correctly resets after a 2-second timeout instead of crashing the app.

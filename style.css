@@ -257,5 +257,3 @@
   animation:rctpulse 1s ease-in-out infinite alternate;
 }
 @keyframes rctpulse{to{transform:scale(1.12);opacity:.58}}
-
-#effectCanvas{will-change:contents;transform:translateZ(0);}
