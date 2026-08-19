@@ -663,8 +663,7 @@ function spawnSlash(direction, point, demo = false, vector = null) {
 
   const pos = point ? screenToPercent(point) : { x: 50, y: 50 };
 
-  // A gesture supplies the exact movement angle. This gives the slash true 360° control.
-  // Domain/demo slashes can also supply an explicit angle.
+  // The user's finger movement controls the slash angle continuously from 0–360°.
   let angle = typeof direction === "object" && Number.isFinite(direction.angle)
     ? direction.angle
     : 0;
@@ -673,55 +672,71 @@ function spawnSlash(direction, point, demo = false, vector = null) {
     angle = (Math.atan2(vector.y, vector.x) * 180 / Math.PI + 360) % 360;
   }
 
-  // A long, clean slash starts exactly at the hand and travels outward.
+  // The artwork itself is angled about 30°. Rotate it back first, then add
+  // the user's movement angle so the actual blade follows the finger.
+  const ART_ANGLE = 30;
+  const finalRotation = angle - ART_ANGLE;
   const rect = video.getBoundingClientRect();
-  const length = Math.max(rect.width, rect.height) * 1.55;
+  const slashWidth = Math.max(520, Math.min(1200, Math.max(rect.width, rect.height) * 0.95));
 
-  // Use the supplied clean Dismantle artwork as the actual VFX.
-  // The PNG is transparent, so only the razor-white slash is visible.
   const slash = document.createElement("img");
-  slash.className = "slash-image clean-dismantle";
-  slash.src = "assets/dismantle-clean.png";
+  slash.className = "slash slash-dismantle-v19";
+  slash.src = "./dismantle-vfx.png?v=19";
   slash.alt = "";
   slash.draggable = false;
   slash.style.left = `${pos.x}%`;
   slash.style.top = `${pos.y}%`;
-  slash.style.width = `${length}px`;
-  slash.style.setProperty("--slash-angle", `${angle}deg`);
-  slash.style.setProperty("--slash-length", `${length}px`);
+  slash.style.width = `${slashWidth}px`;
+  slash.style.setProperty("--slash-angle", `${finalRotation}deg`);
+  slash.style.setProperty("--finger-angle", `${angle}deg`);
 
-  // Keep the hand as the physical origin. The slash extends outward in any 360° direction.
+  // The lower-left tip of the artwork is the physical release point.
+  // This makes the slash appear to launch directly from the index fingertip.
+  slash.style.transformOrigin = "3% 97%";
   slashLayer.appendChild(slash);
 
-  const duration = demo ? 620 : 250;
+  const duration = demo ? 520 : 210;
   const animation = slash.animate(
     [
       {
-        opacity: 1,
-        transform: `translate(0, -50%) rotate(${angle}deg) scaleX(0.015)`,
-        filter: "brightness(1.8) blur(1.2px)"
+        opacity: 0,
+        transform: `rotate(${finalRotation}deg) scaleX(.035)`,
+        filter: "brightness(1.15) contrast(1.2)"
       },
       {
         opacity: 1,
-        transform: `translate(0, -50%) rotate(${angle}deg) scaleX(1.08)`,
-        filter: "brightness(2) blur(0)"
+        transform: `rotate(${finalRotation}deg) scaleX(1.04)`,
+        filter: "brightness(1.45) contrast(1.25)"
       },
       {
-        opacity: .98,
-        transform: `translate(0, -50%) rotate(${angle}deg) scaleX(1)`,
-        filter: "brightness(1.35) blur(.2px)"
+        opacity: 1,
+        transform: `rotate(${finalRotation}deg) scaleX(1)`,
+        filter: "brightness(1.05) contrast(1.15)"
       }
     ],
     {
       duration,
-      easing: "cubic-bezier(.08,.82,.16,1)",
+      easing: "cubic-bezier(.08,.84,.14,1)",
       fill: "forwards"
     }
   );
 
+  // Small black/white debris follows the blade rather than exploding around it.
+  const fragmentCount = demo ? 5 : 3;
+  for (let i = 0; i < fragmentCount; i++) {
+    const fragment = document.createElement("span");
+    fragment.className = "slash-fragment slash-fragment-v19";
+    fragment.style.left = `${pos.x}%`;
+    fragment.style.top = `${pos.y}%`;
+    fragment.style.setProperty("--fragment-angle", `${angle + (Math.random() - .5) * 10}deg`);
+    fragment.style.setProperty("--fragment-distance", `${55 + Math.random() * 110}px`);
+    fragment.style.setProperty("--fragment-delay", `${30 + i * 22}ms`);
+    slashLayer.appendChild(fragment);
+    setTimeout(() => fragment.remove(), 360);
+  }
+
   animation.finished.catch(() => {}).finally(() => {
-    // Keep the strike visible for a beat, then cut it away rather than fading it.
-    setTimeout(() => slash.remove(), demo ? 160 : 90);
+    setTimeout(() => slash.remove(), demo ? 130 : 55);
   });
 }
 

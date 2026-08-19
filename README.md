@@ -195,15 +195,3 @@ RCT now has a white reversed-energy animation: particles spiral inward toward th
 - The HUD control toggle is now a clearly visible HIDE/SHOW pill outside the control panel.
 
 - RCT follows the open-palm hand position during healing.
-
-
-## v17 — Natural 360° Dismantle
-- Dismantle now uses a lightweight pure-CSS/DOM slash VFX instead of image assets.
-- The slash starts at the hand and extends outward using the exact swipe angle from 0°–360°.
-- The strike uses a fast extension, slight overshoot, clean hold, and abrupt removal instead of a fade.
-- Domain slashes can also appear at any angle.
-
-
-## v18 clean Dismantle artwork
-
-Dismantle now uses the supplied clean, razor-sharp slash artwork with a transparent background. The artwork launches from the hand and rotates to the detected movement angle across the full 360 degrees.
