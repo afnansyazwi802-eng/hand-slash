@@ -9,25 +9,30 @@ const WASM_URL =
   "https://unpkg.com/@mediapipe/tasks-vision@0.10.35/wasm";
 
 const video = document.querySelector("#camera");
-const overlay = document.querySelector("#handOverlay");
-const overlayCtx = overlay?.getContext("2d");
-const slashLayer = document.querySelector("#slashLayer");
-const domainFx = document.querySelector("#domainFx");
-const rctFx = document.querySelector("#rctFx");
+const handCanvas = document.querySelector("#handOverlay");
+const handCtx = handCanvas.getContext("2d");
+const effectCanvas = document.querySelector("#effectCanvas");
+const effectCtx = effectCanvas.getContext("2d");
+
 const startBtn = document.querySelector("#start");
-const testSlashBtn = document.querySelector("#test");
+const testBtn = document.querySelector("#test");
 const hideBtn = document.querySelector("#hide");
+const panel = document.querySelector("#panel");
 const statusEl = document.querySelector("#status");
+const handsText = document.querySelector("#handsText");
+const handCount = document.querySelector("#handCount");
 const comboEl = document.querySelector("#combo");
 const hpBar = document.querySelector("#hpBar");
 const hpText = document.querySelector("#hpText");
 const energyBar = document.querySelector("#energyBar");
 const energyText = document.querySelector("#energyText");
-const handsText = document.querySelector("#handsText");
-const sensitivity = document.querySelector("#sensitivity");
+const sensitivityEl = document.querySelector("#sensitivity");
 const sensitivityValue = document.querySelector("#sensitivityValue");
+const domainFx = document.querySelector("#domainFx");
+const rctFx = document.querySelector("#rctFx");
 
 const slashImage = new Image();
+slashImage.decoding = "async";
 slashImage.src = "./dismantle-vfx.png";
 
 let detector = null;
@@ -37,32 +42,27 @@ let lastVideoTime = -1;
 let lastDetectTime = 0;
 
 let hp = 70;
-const MAX_HP = 100;
 let energy = 300;
+let combo = 0;
+const MAX_HP = 100;
 const MAX_ENERGY = 300;
 
-let combo = 0;
-let comboExpires = 0;
-
 let previousIndex = null;
-let previousTime = 0;
 let pointStart = null;
-let gestureArmed = true;
+let fistSince = 0;
+let openPalmSince = 0;
+let twoHandSince = 0;
 
 let rctActive = false;
-let rctStart = 0;
 let domainActive = false;
-let domainStart = 0;
+let domainEnds = 0;
 let domainTimer = 0;
-let openPalmStart = 0;
-let twoHandStart = 0;
-let fistLast = 0;
 
+let slashThreshold = 75;
 let lastSlashTime = 0;
 const SLASH_COOLDOWN = 450;
-let slashThreshold = 75;
 
-const slashStates = [];
+const slashes = [];
 
 const connections = [
   [0,1],[1,2],[2,3],[3,4],
@@ -73,97 +73,96 @@ const connections = [
   [0,17]
 ];
 
-function status(text) {
+function setStatus(text) {
   if (statusEl) statusEl.textContent = text;
 }
 
 function updateHud() {
+  combo = Math.max(0, combo);
+  energy = Math.max(0, Math.min(MAX_ENERGY, energy));
+  hp = Math.max(0, Math.min(MAX_HP, hp));
+
   if (comboEl) comboEl.textContent = combo;
-  if (hpBar) hpBar.style.width = `${hp / MAX_HP * 100}%`;
+  if (hpBar) hpBar.style.width = `${hp}%`;
   if (hpText) hpText.textContent = `${Math.round(hp)} / ${MAX_HP}`;
   if (energyBar) energyBar.style.width = `${energy / MAX_ENERGY * 100}%`;
   if (energyText) energyText.textContent = `${Math.round(energy)} / ${MAX_ENERGY}`;
 }
 
-function resizeOverlay() {
-  if (!overlay || !overlayCtx) return;
-  const rect = video.getBoundingClientRect();
+function resizeCanvases() {
   const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-  overlay.width = Math.max(1, Math.round(rect.width * dpr));
-  overlay.height = Math.max(1, Math.round(rect.height * dpr));
-  overlayCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  for (const canvas of [handCanvas, effectCanvas]) {
+    canvas.width = Math.max(1, Math.round(innerWidth * dpr));
+    canvas.height = Math.max(1, Math.round(innerHeight * dpr));
+    canvas.style.width = `${innerWidth}px`;
+    canvas.style.height = `${innerHeight}px`;
+  }
+  handCtx.setTransform(dpr,0,0,dpr,0,0);
+  effectCtx.setTransform(dpr,0,0,dpr,0,0);
 }
+resizeCanvases();
+window.addEventListener("resize", resizeCanvases);
 
 function videoToScreen(p) {
   const rect = video.getBoundingClientRect();
-  const vw = video.videoWidth || 640;
-  const vh = video.videoHeight || 480;
+  const vw = video.videoWidth || 960;
+  const vh = video.videoHeight || 540;
+
   const scale = Math.max(rect.width / vw, rect.height / vh);
   const shownW = vw * scale;
   const shownH = vh * scale;
   const cropX = (shownW - rect.width) / 2;
   const cropY = (shownH - rect.height) / 2;
+
   return {
     x: (1 - p.x) * shownW - cropX,
     y: p.y * shownH - cropY
   };
 }
 
-function drawHands(allHands) {
-  if (!overlayCtx) return;
-  const rect = video.getBoundingClientRect();
-  overlayCtx.clearRect(0, 0, rect.width, rect.height);
+function drawHands(hands) {
+  handCtx.clearRect(0,0,innerWidth,innerHeight);
 
-  for (const hand of allHands) {
+  for (const hand of hands) {
     const pts = hand.map(videoToScreen);
 
-    overlayCtx.strokeStyle = "rgba(255,255,255,.46)";
-    overlayCtx.lineWidth = 1.5;
-    overlayCtx.beginPath();
+    handCtx.strokeStyle = "rgba(255,255,255,.48)";
+    handCtx.lineWidth = 1.6;
+    handCtx.beginPath();
     for (const [a,b] of connections) {
-      overlayCtx.moveTo(pts[a].x, pts[a].y);
-      overlayCtx.lineTo(pts[b].x, pts[b].y);
+      handCtx.moveTo(pts[a].x,pts[a].y);
+      handCtx.lineTo(pts[b].x,pts[b].y);
     }
-    overlayCtx.stroke();
+    handCtx.stroke();
 
-    overlayCtx.fillStyle = "rgba(255,255,255,.9)";
+    handCtx.fillStyle = "rgba(255,255,255,.9)";
     for (let i=0;i<pts.length;i++) {
-      const r = i === 8 ? 5 : 3;
-      overlayCtx.beginPath();
-      overlayCtx.arc(pts[i].x, pts[i].y, r, 0, Math.PI*2);
-      overlayCtx.fill();
+      handCtx.beginPath();
+      handCtx.arc(pts[i].x,pts[i].y,i===8?5:3,0,Math.PI*2);
+      handCtx.fill();
     }
-
-    const palm = pts[9];
-    overlayCtx.beginPath();
-    overlayCtx.arc(palm.x, palm.y, 9, 0, Math.PI*2);
-    overlayCtx.strokeStyle = "rgba(255,255,255,.75)";
-    overlayCtx.lineWidth = 2;
-    overlayCtx.stroke();
   }
+}
+
+function distance(a,b) {
+  return Math.hypot(a.x-b.x,a.y-b.y);
 }
 
 function angle(a,b,c) {
   const abx=a.x-b.x, aby=a.y-b.y;
   const cbx=c.x-b.x, cby=c.y-b.y;
-  const mag=Math.hypot(abx,aby)*Math.hypot(cbx,cby);
-  if (!mag) return 180;
-  const dot=(abx*cbx+aby*cby)/mag;
-  return Math.acos(Math.max(-1,Math.min(1,dot))) * 180/Math.PI;
+  const den=Math.hypot(abx,aby)*Math.hypot(cbx,cby);
+  if(!den) return 180;
+  return Math.acos(Math.max(-1,Math.min(1,(abx*cbx+aby*cby)/den)))*180/Math.PI;
 }
 
-function fingerExtended(h, mcp,pip,dip,tip) {
-  const wrist=h[0];
-  const pipD=Math.hypot(h[pip].x-wrist.x,h[pip].y-wrist.y);
-  const tipD=Math.hypot(h[tip].x-wrist.x,h[tip].y-wrist.y);
-  return tipD > pipD * 1.08 && angle(h[mcp],h[pip],h[tip]) > 135;
+function fingerExtended(h,mcp,pip,dip,tip) {
+  return distance(h[tip],h[0]) > distance(h[pip],h[0]) * 1.08 &&
+         angle(h[mcp],h[pip],h[tip]) > 135;
 }
 
-function fingerBent(h, mcp,pip,dip,tip) {
-  const wrist=h[0];
-  const pipD=Math.hypot(h[pip].x-wrist.x,h[pip].y-wrist.y);
-  const tipD=Math.hypot(h[tip].x-wrist.x,h[tip].y-wrist.y);
-  return tipD < pipD * 1.22;
+function fingerBent(h,mcp,pip,dip,tip) {
+  return distance(h[tip],h[0]) < distance(h[pip],h[0]) * 1.22;
 }
 
 function isPointing(h) {
@@ -188,335 +187,274 @@ function isOpenPalm(h) {
 }
 
 /*
-  This is the key fix:
-  the slash takes a SNAPSHOT of the finger position at activation.
-  Nothing updates its x/y afterward.
+  Dismantle fix:
+  this is a SNAPSHOT effect. x/y/angle are captured once and never changed.
+  It renders on a dedicated canvas so HTML/CSS/DOM positioning cannot move it.
 */
-function spawnSlash(x,y,angle, fromDomain=false) {
-  if (slashStates.length >= (fromDomain ? 5 : 1)) return;
-  if (!fromDomain && performance.now()-lastSlashTime < SLASH_COOLDOWN) return;
+function spawnSlash(x,y,angle,{domain=false}={}) {
+  if (!slashImage.complete || !slashImage.naturalWidth) {
+    setStatus("Loading Dismantle VFX…");
+    return false;
+  }
 
-  if (!fromDomain) {
+  const now = performance.now();
+
+  if (!domain) {
+    if (now-lastSlashTime < SLASH_COOLDOWN) return false;
     if (energy < 12) {
-      status("Not enough Energy");
-      return;
+      setStatus("Not enough Energy");
+      return false;
     }
     energy -= 12;
     combo += 1;
-    comboExpires = performance.now() + 1800;
-    lastSlashTime = performance.now();
+    lastSlashTime = now;
     updateHud();
   }
 
-  const s = {
-    x, y, angle,
-    born: performance.now(),
-    life: 500,
-    width: Math.min(innerWidth * 0.66, 960)
-  };
+  if (slashes.filter(s=>!s.dead).length >= (domain ? 6 : 1)) return false;
 
-  slashStates.push(s);
-}
+  slashes.push({
+    x,
+    y,
+    angle,
+    born: now,
+    life: domain ? 380 : 520,
+    baseWidth: Math.min(innerWidth * 0.64, 960),
+    dead: false
+  });
 
-function drawSlashes(now) {
-  if (!slashImage.complete || !slashImage.naturalWidth) return;
-
-  for (let i=slashStates.length-1;i>=0;i--) {
-    const s=slashStates[i];
-    const age=now-s.born;
-    if (age>=s.life) {
-      slashStates.splice(i,1);
-      continue;
-    }
-
-    const inT=Math.min(age/75,1);
-    const outT=Math.min((s.life-age)/120,1);
-    const alpha=inT*outT;
-    const width=s.width * (0.72 + 0.28*Math.min(age/110,1));
-    const aspect=slashImage.naturalWidth/slashImage.naturalHeight;
-    const height=width/aspect;
-
-    ctxSave();
-  }
-
-  function ctxSave() {
-    // no-op: actual draw is performed below after layer compositing is
-    // centralized, preserving the fixed spawn coordinates.
-  }
+  return true;
 }
 
 function renderSlashes(now) {
-  if (!slashLayer) return;
+  effectCtx.clearRect(0,0,innerWidth,innerHeight);
 
-  // Clear previous image nodes that belong to completed effects.
-  for (const child of [...slashLayer.children]) {
-    if (child.dataset.dismantle === "true" && !child.isConnected) continue;
-  }
+  for (const s of slashes) {
+    const age = now-s.born;
 
-  // Render each slash as an absolute image. Its position is fixed at spawn.
-  const activeIds = new Set();
-  slashStates.forEach((s, idx) => {
-    const id = `dismantle-${idx}-${s.born}`;
-    activeIds.add(id);
-    let img = slashLayer.querySelector(`[data-slash-id="${CSS.escape(id)}"]`);
-    if (!img) {
-      img = document.createElement("img");
-      img.className = "dismantle-instance";
-      img.dataset.slashId = id;
-      img.src = slashImage.src;
-      slashLayer.appendChild(img);
+    if (age >= s.life) {
+      s.dead = true;
+      continue;
     }
 
-    const age = now - s.born;
-    const inT = Math.min(age/75,1);
-    const outT = Math.min((s.life-age)/120,1);
-    const alpha = inT*outT;
-    const width = s.width * (0.72 + 0.28*Math.min(age/110,1));
-    const posX = s.x;
-    const posY = s.y;
+    const inAlpha = Math.min(age/55,1);
+    const outAlpha = Math.min((s.life-age)/90,1);
+    const alpha = inAlpha*outAlpha;
 
-    // Rotation/position are NEVER changed after the slash is spawned.
-    img.style.left = `${posX}px`;
-    img.style.top = `${posY}px`;
-    img.style.width = `${width}px`;
-    img.style.opacity = `${alpha}`;
-    img.style.transform = `translate(-50%, -50%) rotate(${s.angle}rad)`;
-  });
+    const scale = 0.72 + 0.28*Math.min(age/95,1);
+    const width = s.baseWidth * scale;
+    const aspect = slashImage.naturalWidth / slashImage.naturalHeight;
+    const height = width / aspect;
 
-  for (const img of [...slashLayer.querySelectorAll("[data-slash-id]")]) {
-    if (!activeIds.has(img.dataset.slashId)) img.remove();
+    effectCtx.save();
+    effectCtx.translate(s.x,s.y);
+    effectCtx.rotate(s.angle);
+    effectCtx.globalAlpha = alpha;
+    effectCtx.globalCompositeOperation = "screen";
+
+    // CENTER ANCHOR: the actual center of the image stays exactly at x/y.
+    effectCtx.drawImage(
+      slashImage,
+      -width/2,
+      -height/2,
+      width,
+      height
+    );
+
+    effectCtx.restore();
   }
-}
 
-function randomDomainSlash() {
-  if (!domainActive) return;
-  const margin = Math.min(innerWidth,innerHeight)*0.14;
-  const x = margin + Math.random()*(innerWidth-margin*2);
-  const y = margin + Math.random()*(innerHeight-margin*2);
-  const a = Math.random()*Math.PI*2;
-  spawnSlash(x,y,a,true);
-}
-
-function setDomain(active) {
-  domainActive = active;
-  if (domainFx) {
-    domainFx.classList.toggle("active", active);
+  for(let i=slashes.length-1;i>=0;i--){
+    if(slashes[i].dead) slashes.splice(i,1);
   }
 }
 
 function startDomain() {
-  if (domainActive || rctActive) return;
-  if (energy < 90) {
-    status("Not enough Energy for Domain");
-    return;
-  }
+  if (domainActive || rctActive || energy < 90) return;
 
   energy -= 90;
   updateHud();
 
   domainActive = true;
-  domainStart = performance.now();
-  setDomain(true);
-  status("DOMAIN EXPANSION");
+  domainEnds = performance.now()+5000;
+  if (domainFx) domainFx.classList.add("active");
 
   clearInterval(domainTimer);
-  randomDomainSlash();
-  domainTimer = setInterval(() => {
+  domainTimer = setInterval(()=>{
     if (!domainActive) return;
-    randomDomainSlash();
-  }, 360);
+
+    const margin=Math.min(innerWidth,innerHeight)*0.18;
+    const x=margin+Math.random()*(innerWidth-margin*2);
+    const y=margin+Math.random()*(innerHeight-margin*2);
+    const angle=Math.random()*Math.PI*2;
+    spawnSlash(x,y,angle,{domain:true});
+  },320);
+
+  setStatus("DOMAIN EXPANSION");
 }
 
 function stopDomain() {
   if (!domainActive) return;
-  domainActive = false;
+  domainActive=false;
   clearInterval(domainTimer);
-  domainTimer = 0;
-  setDomain(false);
+  domainTimer=0;
+  if(domainFx) domainFx.classList.remove("active");
+  setStatus("Domain ended");
 }
 
 function startRCT(anchor) {
-  if (rctActive || domainActive) return;
-  if (energy < 40) {
-    status("Not enough Energy for RCT");
-    return;
-  }
+  if (rctActive || domainActive || energy < 40) return;
 
-  rctActive = true;
-  rctStart = performance.now();
-  openPalmStart = performance.now();
-
-  if (rctFx) {
+  rctActive=true;
+  if(rctFx){
     rctFx.classList.add("active");
-    rctFx.style.left = `${anchor.x}px`;
-    rctFx.style.top = `${anchor.y}px`;
+    rctFx.style.left=`${anchor.x}px`;
+    rctFx.style.top=`${anchor.y}px`;
   }
-  status("RCT — REVERSED ENERGY");
+  setStatus("RCT — REVERSED ENERGY");
 }
 
 function stopRCT() {
   if (!rctActive) return;
-  rctActive = false;
-  if (rctFx) rctFx.classList.remove("active");
+  rctActive=false;
+  if(rctFx) rctFx.classList.remove("active");
 }
 
-function updateRCT(now, anchor) {
-  if (!rctActive) return;
-  if (!anchor) {
-    stopRCT();
-    return;
-  }
+function updateRCT(anchor,now) {
+  if(!rctActive || !anchor) return;
 
-  const dt = Math.min(80, now - (window.__rctLast || now));
-  window.__rctLast = now;
+  const dt=Math.min(70,now-(window.__rctTime||now));
+  window.__rctTime=now;
 
-  energy = Math.max(0, energy - dt * 0.035);
-  hp = Math.min(MAX_HP, hp + dt * 0.024);
+  energy=Math.max(0,energy-dt*0.035);
+  hp=Math.min(100,hp+dt*0.024);
   updateHud();
 
-  if (rctFx) {
-    // RCT follows the palm ONLY while RCT is active.
-    rctFx.style.left = `${anchor.x}px`;
-    rctFx.style.top = `${anchor.y}px`;
+  if(rctFx){
+    rctFx.style.left=`${anchor.x}px`;
+    rctFx.style.top=`${anchor.y}px`;
   }
 
-  if (energy <= 0 || now-rctStart >= 4000) {
-    stopRCT();
-    window.__rctLast = 0;
-  }
+  if(energy<=0) stopRCT();
 }
 
-function processResults(results) {
-  const hands = results?.landmarks || [];
-  if (handsText) handsText.textContent = `HANDS ${hands.length}`;
-
-  if (!hands.length) {
-    drawHands([]);
-    previousIndex = null;
-    pointStart = null;
-    openPalmStart = 0;
-    twoHandStart = 0;
-    fistLast = 0;
-    stopRCT();
-    if (!domainActive) status("No hand detected");
-    return;
-  }
+function processHands(result) {
+  const hands=result?.landmarks||[];
+  if(handCount) handCount.textContent=hands.length;
+  if(handsText) handsText.textContent=`HANDS ${hands.length}`;
 
   drawHands(hands);
 
-  const now = performance.now();
-  const twoHands = hands.length >= 2;
-  const first = hands[0];
-  const idx = videoToScreen(first[8]);
-  const palm = videoToScreen(first[9]);
+  const now=performance.now();
 
-  // TWO HANDS ALWAYS HAVE PRIORITY.
-  if (twoHands) {
+  if(!hands.length){
+    previousIndex=null;
+    pointStart=null;
+    fistSince=0;
+    openPalmSince=0;
+    twoHandSince=0;
     stopRCT();
-    openPalmStart = 0;
-    fistLast = 0;
-    previousIndex = null;
-    pointStart = null;
+    if(!domainActive) setStatus("No hand detected");
+    return;
+  }
 
-    if (!twoHandStart) twoHandStart = now;
-    const held = now-twoHandStart;
+  // 2 HANDS ALWAYS WIN OVER RCT.
+  if(hands.length>=2){
+    stopRCT();
+    fistSince=0;
+    openPalmSince=0;
+    previousIndex=null;
+    pointStart=null;
 
-    if (!domainActive) {
-      status(`👐 DOMAIN ${Math.min(100,Math.round(held/550*100))}%`);
-      if (held >= 550) {
+    if(!twoHandSince) twoHandSince=now;
+    const held=now-twoHandSince;
+
+    if(!domainActive){
+      setStatus(`👐 DOMAIN ${Math.min(100,Math.round(held/550*100))}%`);
+      if(held>=550){
         startDomain();
-        twoHandStart = 0;
+        twoHandSince=0;
       }
-    } else {
-      status("DOMAIN EXPANSION");
     }
     return;
   }
 
-  // One hand from here onward.
-  twoHandStart = 0;
+  twoHandSince=0;
 
-  if (domainActive) {
-    stopDomain();
+  if(domainActive){
+    // Keep Domain self-contained. One hand cannot accidentally switch to RCT.
+    return;
   }
 
-  const fist = isFist(first);
-  const palmOpen = isOpenPalm(first);
-  const pointing = isPointing(first);
+  const h=hands[0];
+  const index=videoToScreen(h[8]);
+  const palm=videoToScreen(h[9]);
+  const pointing=isPointing(h);
+  const fist=isFist(h);
+  const palmOpen=isOpenPalm(h);
 
-  // FIST: medium recharge, time based.
-  if (fist) {
+  if(fist){
     stopRCT();
-    openPalmStart = 0;
-    pointStart = null;
-    previousIndex = {...idx};
+    openPalmSince=0;
+    pointStart=null;
+    previousIndex={...index};
 
-    if (!fistLast) fistLast=now;
-    const dt=Math.min(100,now-fistLast);
-    fistLast=now;
+    if(!fistSince) fistSince=now;
+    const dt=Math.min(90,now-fistSince);
+    fistSince=now;
+
     energy=Math.min(MAX_ENERGY,energy+dt*0.045);
     updateHud();
-    status(`✊ RECHARGING ${Math.round(energy)}`);
+    setStatus(`✊ RECHARGING ${Math.round(energy)} / ${MAX_ENERGY}`);
     return;
   }
-  fistLast=0;
 
-  // RCT: one open palm, must be held for 450ms.
-  if (palmOpen && !pointing) {
-    previousIndex = {...idx};
-    pointStart = null;
+  fistSince=0;
 
-    if (!openPalmStart) openPalmStart = now;
-    const held=now-openPalmStart;
+  if(palmOpen && !pointing){
+    pointStart=null;
+    previousIndex={...index};
 
-    if (!rctActive) {
-      status(`🖐️ RCT ${Math.min(100,Math.round(held/450*100))}%`);
-      if (held >= 450) startRCT(palm);
-    } else {
-      status("RCT — REVERSED ENERGY");
-    }
+    if(!openPalmSince) openPalmSince=now;
+    if(!rctActive && now-openPalmSince>=450) startRCT(palm);
 
-    updateRCT(now,palm);
+    if(rctActive) updateRCT(palm,now);
+    else setStatus(`🖐️ RCT ${Math.min(100,Math.round((now-openPalmSince)/450*100))}%`);
+
     return;
   }
-  openPalmStart=0;
 
-  if (rctActive) stopRCT();
+  openPalmSince=0;
+  if(rctActive) stopRCT();
 
-  // Dismantle: start from the current fingertip and require deliberate travel.
-  if (pointing) {
-    if (!previousIndex) previousIndex={...idx};
-    if (!pointStart) pointStart={...idx};
-
-    const dx=idx.x-pointStart.x;
-    const dy=idx.y-pointStart.y;
+  if(pointing){
+    if(!pointStart) pointStart={...index};
+    const dx=index.x-pointStart.x;
+    const dy=index.y-pointStart.y;
     const travel=Math.hypot(dx,dy);
 
-    status("☝️ POINT — SWIPE TO DISMANTLE");
+    setStatus("☝️ POINT — SWIPE TO DISMANTLE");
 
-    if (travel >= slashThreshold && gestureArmed && now-lastSlashTime >= SLASH_COOLDOWN) {
-      spawnSlash(idx.x,idx.y,Math.atan2(dy,dx),false);
-      pointStart={...idx};
-      gestureArmed=false;
+    if(travel>=slashThreshold && now-lastSlashTime>=SLASH_COOLDOWN){
+      // IMPORTANT: spawn uses the CURRENT fingertip once, then locks it.
+      const fired=spawnSlash(index.x,index.y,Math.atan2(dy,dx));
+      if(fired) pointStart={...index};
     }
 
-    // Re-arm when the finger changes direction or a new motion segment starts.
-    const localMove=Math.hypot(idx.x-(previousIndex?.x||idx.x),idx.y-(previousIndex?.y||idx.y));
-    if (localMove > 12) gestureArmed=true;
-
-    previousIndex={...idx};
-    previousTime=now;
+    previousIndex={...index};
     return;
   }
 
   previousIndex=null;
   pointStart=null;
-  gestureArmed=true;
-  status("Hand detected");
+  setStatus("Hand detected");
 }
 
-async function createDetector() {
+async function setupDetector() {
+  setStatus("Loading hand tracker…");
+
   const vision=await FilesetResolver.forVisionTasks(WASM_URL);
+
   detector=await HandLandmarker.createFromOptions(vision,{
     baseOptions:{modelAssetPath:MODEL_URL},
     runningMode:"VIDEO",
@@ -527,7 +465,11 @@ async function createDetector() {
   });
 }
 
-async function startCamera() {
+async function startCamera(){
+  if(!navigator.mediaDevices?.getUserMedia){
+    throw new Error("Camera API is not available.");
+  }
+
   stream=await navigator.mediaDevices.getUserMedia({
     video:{
       facingMode:"user",
@@ -540,80 +482,73 @@ async function startCamera() {
 
   video.srcObject=stream;
   await video.play();
+
   running=true;
   startBtn.disabled=true;
-  if(testSlashBtn) testSlashBtn.disabled=false;
-  status("Camera ready — show your hand");
-  resizeOverlay();
+  testBtn.disabled=false;
+  setStatus("Camera ready — show one or two hands");
+  resizeCanvases();
   requestAnimationFrame(loop);
 }
 
-function loop(now) {
-  if (!running || !detector) return;
+function loop(now){
+  if(!running || !detector) return;
 
-  if (now-lastDetectTime >= 60 &&
-      video.readyState >= 2 &&
-      video.currentTime !== lastVideoTime) {
-    lastDetectTime=now;
+  if(video.readyState>=2 &&
+     video.currentTime!==lastVideoTime &&
+     now-lastDetectTime>=60){
+
     lastVideoTime=video.currentTime;
+    lastDetectTime=now;
 
-    try {
-      const results=detector.detectForVideo(video,now);
-      processResults(results);
-    } catch(err) {
+    try{
+      const result=detector.detectForVideo(video,now);
+      processHands(result);
+    }catch(err){
       console.error(err);
-      status("Hand tracking error — open Console");
+      setStatus(`Hand tracking error: ${err.message}`);
     }
   }
 
-  // Domain lasts exactly 5 seconds and has no effect from one-hand gestures.
-  if (domainActive && now-domainStart >= 5000) {
+  if(domainActive && now>=domainEnds){
     stopDomain();
-    status("Domain ended");
-  }
-
-  if (combo > 0 && now>comboExpires) {
-    combo=0;
-    updateHud();
   }
 
   renderSlashes(now);
+
+  if(combo>0 && comboExpires && now>comboExpires){
+    combo=0;
+    comboExpires=0;
+    updateHud();
+  }
+
   requestAnimationFrame(loop);
 }
 
-if (sensitivity) {
-  const sync=()=>{
-    slashThreshold=Number(sensitivity.value);
-    if(sensitivityValue) sensitivityValue.textContent=`${slashThreshold}px`;
-  };
-  sensitivity.addEventListener("input",sync);
-  sync();
-}
+sensitivityEl?.addEventListener("input",()=>{
+  slashThreshold=Number(sensitivityEl.value);
+  if(sensitivityValue) sensitivityValue.textContent=`${slashThreshold}px`;
+});
 
 startBtn?.addEventListener("click",async()=>{
-  try {
-    await createDetector();
+  startBtn.disabled=true;
+  try{
+    await setupDetector();
     await startCamera();
-  } catch(err) {
+  }catch(err){
     console.error(err);
-    status(`Error: ${err.message}`);
     startBtn.disabled=false;
+    setStatus(`Error: ${err.message}`);
   }
 });
 
-testSlashBtn?.addEventListener("click",()=>{
-  spawnSlash(innerWidth/2,innerHeight/2,0,false);
-  status("TEST DISMANTLE");
+testBtn?.addEventListener("click",()=>{
+  spawnSlash(innerWidth/2,innerHeight/2,0,{});
+  setStatus("TEST DISMANTLE");
 });
 
 hideBtn?.addEventListener("click",()=>{
-  const panel=document.querySelector(".panel");
-  if(panel) panel.classList.toggle("hidden");
+  panel?.classList.toggle("hidden");
 });
 
 updateHud();
-
-window.addEventListener("error", (event) => {
-  const text = event?.error?.message || event?.message;
-  if (text && typeof status === "function") status(`JS error: ${text}`);
-});

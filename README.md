@@ -35,3 +35,7 @@ Two hands held for about 0.5 seconds activate Domain Expansion. It lasts 5 secon
 ## v36 startup fix
 - `app.js` is an ES module and is now loaded with `type="module"` so Start Camera works again.
 - Fixed HP/Energy element IDs to match the JavaScript.
+
+
+## v37 slash render fix
+The Dismantle VFX is now rendered on a dedicated canvas. The spawn coordinates and angle are snapshotted once, so the slash remains exactly where it is created and cannot drift with the hand or HTML layout.
