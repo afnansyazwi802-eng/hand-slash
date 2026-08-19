@@ -3,37 +3,47 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Hand Slash — Single Clean Dismantle</title>
+<title>Hand Slash — Dismantle</title>
 <link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 </head>
 <body>
 <video id="camera" autoplay playsinline muted></video>
 <canvas id="overlay"></canvas>
 
 <section class="panel" id="panel">
-  <h1>HAND SLASH</h1>
-  <p>Point + move your index finger to launch one clean Dismantle slash.</p>
+  <div class="title-row">
+    <div>
+      <h1>HAND SLASH</h1>
+      <p id="hint">Point with your index finger and swipe.</p>
+    </div>
+    <button class="small" id="hide" title="Hide controls">Hide</button>
+  </div>
   <div class="buttons">
     <button id="start">Start Camera</button>
     <button id="test">Test Slash</button>
-    <button id="hide">Hide</button>
+    <button id="clear">Clear VFX</button>
   </div>
-  <label>Gesture
-    <select id="gesture">
-      <option>Point + Move</option>
-    </select>
-  </label>
-  <label>Sensitivity
+  <label>Slash sensitivity
     <input id="sensitivity" type="range" min="0.5" max="2" step="0.05" value="1">
   </label>
   <div id="status">Camera off</div>
+  <div class="legend">
+    <span>☝️ Slash</span><span>✊ Recharge</span><span>🖐 RCT</span><span>🤲 Domain</span>
+  </div>
 </section>
+
+<button id="show" class="show hidden">SHOW</button>
 
 <section class="hud">
   <div>COMBO <b id="combo">0</b></div>
-  <div>ENERGY <span class="bar"><i id="energy"></i></span></div>
+  <div class="meter-row"><span>ENERGY</span><span class="bar"><i id="energy"></i></span><b id="energyText">300</b></div>
+  <div class="meter-row hp-row"><span>HP</span><span class="bar hp"><i id="hp"></i></span><b id="hpText">100</b></div>
+  <div id="mode">READY</div>
 </section>
 
+<div id="flash"></div>
 <script src="app.js"></script>
 </body>
 </html>
