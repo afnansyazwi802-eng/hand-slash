@@ -658,118 +658,116 @@ function spawnParticles(point) {
 }
 
 function spawnSlash(direction, point, demo = false, vector = null) {
-  const existing = slashLayer.querySelectorAll(".slash, .slash-fallback").length;
-  if (existing >= (domainActive ? 5 : 3) && !demo) return;
+  const existing = slashLayer.querySelectorAll(".dismantle-projectile").length;
+  if (existing >= (domainActive ? 5 : 2) && !demo) return;
 
-  const rect = video.getBoundingClientRect();
-  if (!rect.width || !rect.height) return;
+  const videoRect = video.getBoundingClientRect();
+  const layerRect = slashLayer.getBoundingClientRect();
+  const launch = point || {
+    x: videoRect.width * 0.5,
+    y: videoRect.height * 0.5
+  };
 
-  // The slash is released from the actual index fingertip.
-  const fingerX = point ? point.x : rect.width * 0.5;
-  const fingerY = point ? point.y : rect.height * 0.5;
-
-  // Use the real movement vector for a true 0–360° direction.
-  let angle = typeof direction === "object" && Number.isFinite(direction.angle)
-    ? direction.angle
-    : 0;
-
-  if (vector && !demo && !domainActive) {
+  // The finger movement is the launch impulse. Keep the full 0–360° angle.
+  let angle = Number.isFinite(direction?.angle) ? direction.angle : 0;
+  if (vector && !demo) {
     angle = (Math.atan2(vector.y, vector.x) * 180 / Math.PI + 360) % 360;
   }
 
-  // The supplied Dismantle artwork points up-right at about -30° in its
-  // natural orientation. Add 30° so its blade direction exactly matches
-  // the user's movement direction.
-  const ART_DIRECTION = 0;
-  const finalRotation = angle - ART_DIRECTION;
+  // The artwork's blade points roughly -30° in its source image.
+  // Rotating by +30° makes its tip-to-tip axis line up with the movement angle.
+  const ART_AXIS_DEG = -30;
+  const rotation = angle - ART_AXIS_DEG;
 
-  // Keep the effect large enough to feel powerful, but small enough that
-  // the user can still see most of it on screen.
-  const slashWidth = Math.max(
-    420,
-    Math.min(700, Math.min(rect.width, rect.height) * 0.78)
-  );
-  const slashHeight = slashWidth * (682 / 2048);
+  const diagonal = Math.hypot(videoRect.width, videoRect.height);
+  const slashWidth = Math.max(420, Math.min(760, diagonal * 0.58));
+  const slashHeight = slashWidth * (869 / 1515);
+
+  // Convert the fingertip from the camera rectangle into the slash layer.
+  const startX = launch.x + videoRect.left - layerRect.left;
+  const startY = launch.y + videoRect.top - layerRect.top;
+
+  // The slash flies forward instead of being pinned to the screen edge.
+  // It travels far enough to read as a ranged cut, but not so far that it
+  // instantly disappears on ordinary swipes.
+  const travel = demo
+    ? diagonal * 0.42
+    : Math.min(diagonal * 0.78, Math.max(diagonal * 0.48, 430 + Math.hypot(vector?.x || 0, vector?.y || 0) * 1.8));
+
+  const projectile = document.createElement("div");
+  projectile.className = "dismantle-projectile";
+  projectile.style.left = `${startX}px`;
+  projectile.style.top = `${startY}px`;
+  projectile.style.width = `${slashWidth}px`;
+  projectile.style.height = `${slashHeight}px`;
+  projectile.style.setProperty("--slash-rotation", `${rotation}deg`);
 
   const slash = document.createElement("img");
-  slash.className = "slash slash-dismantle-v20";
-  slash.src = "./dismantle-vfx.png?v=21";
+  slash.src = `./dismantle-vfx.png?v=21`;
   slash.alt = "";
   slash.draggable = false;
+  slash.className = "dismantle-projectile-art";
+  slash.width = Math.round(slashWidth);
+  slash.height = Math.round(slashHeight);
 
-  // The artwork's lower-left release point becomes the fingertip.
-  // IMPORTANT: left/top must compensate for the transform origin.
-  const ORIGIN_X = 48 / 2048;
-  const ORIGIN_Y = 381 / 682;
+  projectile.appendChild(slash);
+  slashLayer.appendChild(projectile);
 
-  slash.style.width = `${slashWidth}px`;
-  slash.style.left = `${fingerX - slashWidth * ORIGIN_X}px`;
-  slash.style.top = `${fingerY - slashHeight * ORIGIN_Y}px`;
-  slash.style.transformOrigin = `${ORIGIN_X * 100}% ${ORIGIN_Y * 100}%`;
-  slash.style.setProperty("--slash-angle", `${finalRotation}deg`);
-  slash.style.setProperty("--finger-angle", `${angle}deg`);
+  const rad = angle * Math.PI / 180;
+  const vx = Math.cos(rad);
+  const vy = Math.sin(rad);
 
-  slashLayer.appendChild(slash);
+  // A short, sharp acceleration phase gives the "slide → ZAP" feeling.
+  const duration = demo ? 500 : 285;
+  const start = performance.now();
+  let rafId = 0;
 
-  // A quick "release -> extension -> settle" motion makes the cut feel
-  // like it came out of the hand instead of being pasted onto the screen.
-  const duration = demo ? 560 : 235;
+  function animateProjectile(now) {
+    const elapsed = now - start;
+    const t = Math.min(1, elapsed / duration);
 
-  const animation = slash.animate(
-    [
-      {
-        opacity: 0,
-        transform: `rotate(${finalRotation}deg) scaleX(0.018)`,
-        filter: "brightness(1.05) contrast(1.15)"
-      },
-      {
-        opacity: 1,
-        transform: `rotate(${finalRotation}deg) scaleX(1.08)`,
-        filter: "brightness(1.5) contrast(1.35)",
-        offset: 0.62
-      },
-      {
-        opacity: 1,
-        transform: `rotate(${finalRotation}deg) scaleX(1)`,
-        filter: "brightness(1.08) contrast(1.18)",
-        offset: 0.82
-      },
-      {
-        opacity: 0,
-        transform: `rotate(${finalRotation}deg) scaleX(1.015)`,
-        filter: "brightness(1.02) contrast(1.12)"
-      }
-    ],
-    {
-      duration,
-      easing: "cubic-bezier(.12,.8,.16,1)",
-      fill: "forwards"
+    // Ease-out after a very fast launch: quick first 25%, then clean travel.
+    const travelT = t < 0.22
+      ? (t / 0.22) ** 1.65 * 0.28
+      : 0.28 + ((t - 0.22) / 0.78) ** 0.82 * 0.72;
+
+    const x = vx * travel * travelT;
+    const y = vy * travel * travelT;
+
+    // Extend the blade during the first few frames, then hold its shape.
+    const grow = Math.min(1, t / 0.12);
+    const scaleX = 0.035 + grow * 0.965;
+
+    let opacity = 1;
+    if (t < 0.035) opacity = t / 0.035;
+    else if (t > 0.88) opacity = 1 - (t - 0.88) / 0.12;
+
+    projectile.style.transform = `translate3d(${x}px, ${y}px, 0) rotate(${rotation}deg) scaleX(${scaleX})`;
+    projectile.style.opacity = opacity.toFixed(3);
+
+    if (t < 1) {
+      rafId = requestAnimationFrame(animateProjectile);
+    } else {
+      cancelAnimationFrame(rafId);
+      projectile.remove();
     }
-  );
-
-  // Debris starts at the same fingertip, so it visually belongs to the cut.
-  const fragmentCount = demo ? 5 : 3;
-  for (let i = 0; i < fragmentCount; i++) {
-    const fragment = document.createElement("span");
-    fragment.className = "slash-fragment slash-fragment-v20";
-    fragment.style.left = `${fingerX}px`;
-    fragment.style.top = `${fingerY}px`;
-    fragment.style.setProperty(
-      "--fragment-angle",
-      `${angle + (Math.random() - 0.5) * 10}deg`
-    );
-    fragment.style.setProperty(
-      "--fragment-distance",
-      `${35 + Math.random() * 75}px`
-    );
-    fragment.style.setProperty("--fragment-delay", `${25 + i * 18}ms`);
-    slashLayer.appendChild(fragment);
-    setTimeout(() => fragment.remove(), 340);
   }
 
-  animation.finished.catch(() => {}).finally(() => {
-    setTimeout(() => slash.remove(), demo ? 80 : 35);
-  });
+  rafId = requestAnimationFrame(animateProjectile);
+
+  // A tiny trail follows the launch direction; it is intentionally restrained.
+  const fragmentCount = demo ? 4 : 2;
+  for (let i = 0; i < fragmentCount; i++) {
+    const fragment = document.createElement("span");
+    fragment.className = "slash-fragment slash-fragment-v19";
+    fragment.style.left = `${startX}px`;
+    fragment.style.top = `${startY}px`;
+    fragment.style.setProperty("--fragment-angle", `${angle + (Math.random() - .5) * 7}deg`);
+    fragment.style.setProperty("--fragment-distance", `${35 + Math.random() * 80}px`);
+    fragment.style.setProperty("--fragment-delay", `${i * 18}ms`);
+    slashLayer.appendChild(fragment);
+    setTimeout(() => fragment.remove(), 280);
+  }
 }
 
 function triggerSlash(direction, point, demo = false, vector = null) {
@@ -806,9 +804,6 @@ function processResults(results) {
     window.__openPalmStart = 0;
     window.__twoPalmStart = 0;
     window.__fistLastTime = 0;
-    previousTip = null;
-    smoothedTip = null;
-    previousDirection = null;
     return;
   }
 

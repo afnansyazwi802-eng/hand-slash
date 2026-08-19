@@ -195,7 +195,3 @@ RCT now has a white reversed-energy animation: particles spiral inward toward th
 - The HUD control toggle is now a clearly visible HIDE/SHOW pill outside the control panel.
 
 - RCT follows the open-palm hand position during healing.
-
-
-### v21 Dismantle artwork
-The Dismantle VFX now uses the new clean horizontal transparent slash artwork, aligned from its left release tip and rotated to follow the detected 360° hand movement.
