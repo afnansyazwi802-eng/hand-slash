@@ -257,3 +257,25 @@
   animation:rctpulse 1s ease-in-out infinite alternate;
 }
 @keyframes rctpulse{to{transform:scale(1.12);opacity:.58}}
+
+#rechargeFx{
+  position:fixed;
+  z-index:17;
+  pointer-events:none;
+  width:200px;
+  height:200px;
+  object-fit:contain;
+  transform:translate(-50%,-78%) scale(.9);
+  opacity:0;
+  display:none;
+  mix-blend-mode:screen;
+  filter:drop-shadow(0 0 18px rgba(255,60,40,.65));
+  transition:opacity .18s ease-out,transform .18s ease-out;
+}
+#rechargeFx.active{
+  display:block;
+  opacity:1;
+  transform:translate(-50%,-78%) scale(1);
+}
+
+#effectCanvas{will-change:contents;transform:translateZ(0);}

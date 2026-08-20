@@ -14,6 +14,7 @@ Two hands held for about 0.5 seconds activate Domain Expansion. It lasts 5 secon
 - `index.html`
 - `style.css`
 - `dismantle-vfx.png`
+- `energy-recovery.webp`
 - `favicon.svg`
 
 
@@ -40,5 +41,15 @@ Two hands held for about 0.5 seconds activate Domain Expansion. It lasts 5 secon
 ## v37 slash render fix
 The Dismantle VFX is now rendered on a dedicated canvas. The spawn coordinates and angle are snapshotted once, so the slash remains exactly where it is created and cannot drift with the hand or HTML layout.
 
-## v38 crash fix
-Fixed a `ReferenceError: comboExpires is not defined` that crashed the render loop (`requestAnimationFrame`) after the first successful Dismantle slash. `comboExpires` was referenced in `loop()` but never declared or assigned anywhere, so once `combo > 0` the loop threw uncaught on every frame and hand tracking / RCT / Domain / slash rendering all silently stopped. Now `comboExpires` is declared alongside the other state variables and is set whenever a slash lands, so combo correctly resets after a 2-second timeout instead of crashing the app.
+
+## v38 slash unstuck
+- Dismantle now has a hard 440ms lifetime.
+- Render loop clears the effect canvas every frame.
+- Dead slash states are force-removed every frame.
+- Rendering no longer depends on a successful hand-detection frame.
+- Fixed a `comboExpires is not defined` crash that killed the whole render loop after the first Dismantle slash. `comboExpires` is now declared and set on every landed slash, so combo correctly decays after a 2s timeout instead of throwing.
+
+## v39 recharge energy VFX
+- Added a red cursed-energy flame overlay (`energy-recovery.webp`, animated, real alpha) that plays anchored to the palm while Fist/recharge is active.
+- Source GIF's baked-in checkerboard background was converted to true alpha transparency (alpha derived from per-pixel brightness) and hue-shifted from cyan to red.
+- The effect fades in/out with the fist gesture and is force-hidden by `stopRCT()` in every state (Domain start, hands lost, energy depleted) so it can never get stuck on screen.

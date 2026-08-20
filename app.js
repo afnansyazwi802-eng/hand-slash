@@ -30,6 +30,7 @@ const sensitivityEl = document.querySelector("#sensitivity");
 const sensitivityValue = document.querySelector("#sensitivityValue");
 const domainFx = document.querySelector("#domainFx");
 const rctFx = document.querySelector("#rctFx");
+const rechargeFx = document.querySelector("#rechargeFx");
 
 const slashImage = new Image();
 slashImage.decoding = "async";
@@ -323,6 +324,7 @@ function startRCT(anchor) {
 }
 
 function stopRCT() {
+  if (rechargeFx) rechargeFx.classList.remove("active");
   if (!rctActive) return;
   rctActive=false;
   if(rctFx) rctFx.classList.remove("active");
@@ -414,9 +416,16 @@ function processHands(result) {
     energy=Math.min(MAX_ENERGY,energy+dt*0.045);
     updateHud();
     setStatus(`✊ RECHARGING ${Math.round(energy)} / ${MAX_ENERGY}`);
+
+    if(rechargeFx){
+      rechargeFx.classList.add("active");
+      rechargeFx.style.left=`${palm.x}px`;
+      rechargeFx.style.top=`${palm.y}px`;
+    }
     return;
   }
 
+  if(fistSince && rechargeFx) rechargeFx.classList.remove("active");
   fistSince=0;
 
   if(palmOpen && !pointing){
